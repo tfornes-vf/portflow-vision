@@ -53,10 +53,10 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
           ))}
         </nav>
 
-        <div className="absolute bottom-4 left-4 right-4">
+        <div className="absolute bottom-4 left-4">
           <Button
             variant="outline"
-            className="w-full justify-start gap-3"
+            className="justify-start gap-3 px-4 py-3"
             onClick={handleLogout}
           >
             <LogOut className="h-5 w-5" />
