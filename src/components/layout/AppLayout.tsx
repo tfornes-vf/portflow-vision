@@ -1,10 +1,11 @@
 import { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, List, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Settings, LogOut } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import logo from "@/assets/ycapital-logo.svg";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -20,7 +21,6 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
 
   const navItems = [
     { to: "/", icon: LayoutDashboard, label: "Dashboard" },
-    { to: "/trades", icon: List, label: "Operaciones" },
     { to: "/backoffice", icon: Settings, label: "Administración" },
   ];
 
@@ -28,8 +28,8 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
     <div className="flex min-h-screen w-full bg-background">
       {/* Sidebar */}
       <aside className="w-64 border-r border-border bg-card">
-        <div className="flex h-16 items-center border-b border-border px-6">
-          <h1 className="text-xl font-semibold text-gradient">Portfolio</h1>
+        <div className="flex h-16 items-center justify-center border-b border-border px-6">
+          <img src={logo} alt="Y Capital" className="h-10 w-auto" />
         </div>
         
         <nav className="flex flex-col gap-1 p-4">

@@ -11,7 +11,7 @@ export const PortfolioChart = ({ invested, available }: PortfolioChartProps) => 
     { name: "Capital Disponible", value: available },
   ];
 
-  const COLORS = ["hsl(217 91% 35%)", "hsl(142 71% 45%)"];
+  const COLORS = ["hsl(210 82% 20%)", "hsl(0 100% 38%)"];
 
   return (
     <ResponsiveContainer width="100%" height={300}>

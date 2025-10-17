@@ -23,7 +23,7 @@ export const MetricCard = ({ title, value, icon, trend, className }: MetricCardP
         {icon && <div className="text-muted-foreground">{icon}</div>}
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-2xl font-bold text-muted-heading">{value}</div>
         {trend && (
           <p className={cn(
             "text-xs mt-1",
