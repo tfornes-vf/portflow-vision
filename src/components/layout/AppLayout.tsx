@@ -27,7 +27,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
   return (
     <div className="flex min-h-screen w-full bg-background">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-border bg-card">
+      <aside className="w-64 border-r border-border bg-card flex flex-col">
         <div className="flex h-16 items-center justify-center border-b border-border px-6">
           <img src={logo} alt="Y Capital" className="h-10 w-auto" />
         </div>
@@ -53,7 +53,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
           ))}
         </nav>
 
-        <div className="absolute bottom-4 left-4">
+        <div className="mt-auto p-4">
           <Button
             variant="outline"
             className="justify-start gap-3 px-4 py-3"
