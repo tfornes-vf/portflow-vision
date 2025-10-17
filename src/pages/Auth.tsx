@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { User, Session } from "@supabase/supabase-js";
+import logo from "@/assets/ycapital-logo.svg";
 
 export default function Auth() {
   const [email, setEmail] = useState("");
@@ -110,8 +111,10 @@ export default function Auth() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-background via-background to-secondary/20">
       <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="space-y-1 text-center">
-          <CardTitle className="text-3xl font-bold text-gradient">Portfolio</CardTitle>
+        <CardHeader className="space-y-4 text-center">
+          <div className="flex justify-center">
+            <img src={logo} alt="Y Capital" className="h-16 w-auto" />
+          </div>
           <CardDescription>
             Gestiona tu portfolio de trading de forma profesional
           </CardDescription>
