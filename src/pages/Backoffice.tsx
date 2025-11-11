@@ -34,9 +34,10 @@ import { Plus, Edit } from "lucide-react";
 
 interface Profile {
   id: string;
+  user_id: string;
   email: string;
   full_name: string | null;
-  role: "admin" | "viewer";
+  role?: "admin" | "viewer";
   is_enabled: boolean;
 }
 
@@ -72,21 +73,40 @@ export default function Backoffice() {
     if (!user) return;
 
     const { data } = await supabase
-      .from("profiles")
+      .from("user_roles")
       .select("role")
       .eq("user_id", user.id)
-      .single();
+      .eq("role", "admin")
+      .maybeSingle();
 
-    setIsAdmin(data?.role === "admin");
+    setIsAdmin(!!data);
   };
 
   const fetchProfiles = async () => {
-    const { data, error } = await supabase.from("profiles").select("*");
-    if (error) {
-      console.error("Error fetching profiles:", error);
+    const { data: profilesData, error: profilesError } = await supabase
+      .from("profiles")
+      .select("*");
+    
+    if (profilesError) {
+      console.error("Error fetching profiles:", profilesError);
       return;
     }
-    setProfiles(data || []);
+
+    // Fetch roles from user_roles table
+    const { data: rolesData } = await supabase
+      .from("user_roles")
+      .select("user_id, role");
+
+    // Merge profiles with roles
+    const profilesWithRoles = profilesData?.map(profile => {
+      const userRole = rolesData?.find(r => r.user_id === profile.user_id);
+      return {
+        ...profile,
+        role: userRole?.role as "admin" | "viewer" | undefined
+      };
+    }) || [];
+
+    setProfiles(profilesWithRoles);
   };
 
   const fetchBrokers = async () => {
@@ -127,10 +147,27 @@ export default function Backoffice() {
   };
 
   const updateUserRole = async (profileId: string, role: "admin" | "viewer") => {
+    // Find the profile to get user_id
+    const profile = profiles.find(p => p.id === profileId);
+    if (!profile) {
+      toast({
+        title: "Error",
+        description: "Perfil no encontrado",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Delete existing role
+    await supabase
+      .from("user_roles")
+      .delete()
+      .eq("user_id", profile.user_id);
+
+    // Insert new role
     const { error } = await supabase
-      .from("profiles")
-      .update({ role })
-      .eq("id", profileId);
+      .from("user_roles")
+      .insert({ user_id: profile.user_id, role });
 
     if (error) {
       toast({
