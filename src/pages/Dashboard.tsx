@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { PortfolioChart } from "@/components/dashboard/PortfolioChart";
+import { PortfolioPerformance } from "@/components/dashboard/PortfolioPerformance";
+import { PositionsTable } from "@/components/dashboard/PositionsTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -169,154 +171,166 @@ export default function Dashboard() {
     <DashboardLayout>
       {(activeCategory) => (
         <div className="space-y-6">
-          {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                Dashboard
-              </h1>
-              <p className="text-muted-foreground mt-1">
-                {activeCategory === "aggregated" 
-                  ? "Vista consolidada de todas tus inversiones"
-                  : `Vista de ${activeCategory.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}`
-                }
-              </p>
-            </div>
+          {activeCategory === "interactive-brokers" ? (
+            <>
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                    Dashboard
+                  </h1>
+                  <p className="text-muted-foreground mt-1">
+                    Vista de Interactive Brokers
+                  </p>
+                </div>
 
-            <Select value={selectedBroker} onValueChange={setSelectedBroker}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Selecciona un broker" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los brokers</SelectItem>
-                {brokers.map((broker) => (
-                  <SelectItem key={broker.id} value={broker.id}>
-                    {broker.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-        {/* Metrics */}
-        <div className="grid gap-4 md:grid-cols-3">
-          <MetricCard
-            title="Balance Total"
-            value={`$${totalBalance.toLocaleString()}`}
-            icon={<Wallet className="h-4 w-4" />}
-          />
-          <MetricCard
-            title="Capital Invertido"
-            value={`$${investedCapital.toLocaleString()}`}
-            icon={<TrendingUp className="h-4 w-4" />}
-          />
-          <MetricCard
-            title="Capital Disponible"
-            value={`$${availableCapital.toLocaleString()}`}
-            icon={<DollarSign className="h-4 w-4" />}
-          />
-        </div>
-
-        {/* Chart */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-muted-heading">Distribución del Capital</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <PortfolioChart
-              invested={investedCapital}
-              available={availableCapital}
-            />
-          </CardContent>
-        </Card>
-
-        {/* Operaciones Section */}
-        <Card>
-          <CardHeader className="space-y-4">
-            <CardTitle className="text-muted-heading">Operaciones</CardTitle>
-            <div className="flex flex-col gap-4">
-              <div className="flex flex-wrap gap-2">
-                {periods.map((period) => (
-                  <Button
-                    key={period.value}
-                    variant={selectedPeriod === period.value ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedPeriod(period.value)}
-                    className="transition-smooth"
-                  >
-                    {period.label}
-                  </Button>
-                ))}
+                <Select value={selectedBroker} onValueChange={setSelectedBroker}>
+                  <SelectTrigger className="w-[200px]">
+                    <SelectValue placeholder="Selecciona un broker" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos los brokers</SelectItem>
+                    {brokers.map((broker) => (
+                      <SelectItem key={broker.id} value={broker.id}>
+                        {broker.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
-              <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
-                <SelectTrigger className="w-full md:w-[300px]">
-                  <SelectValue placeholder="Todas las estrategias" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todas las estrategias</SelectItem>
-                  {strategies.map((strategy) => (
-                    <SelectItem key={strategy.id} value={strategy.id}>
-                      {strategy.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Fecha y Hora</TableHead>
-                    <TableHead>Activo</TableHead>
-                    <TableHead>Estrategia</TableHead>
-                    <TableHead className="text-right">Tamaño (Lote)</TableHead>
-                    <TableHead className="text-right">P/L</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {trades.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={5} className="text-center text-muted-foreground">
-                        No hay operaciones para mostrar
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    trades.map((trade) => (
-                      <TableRow key={trade.id} className="transition-smooth hover:bg-muted/50">
-                        <TableCell className="font-medium">
-                          {trade.closed_at &&
-                            format(new Date(trade.closed_at), "dd/MM/yyyy HH:mm", {
-                              locale: es,
-                            })}
-                        </TableCell>
-                        <TableCell>
-                          {trade.symbol}
-                        </TableCell>
-                        <TableCell>{trade.strategies?.name || "-"}</TableCell>
-                        <TableCell className="text-right">
-                          {trade.lot_size}
-                        </TableCell>
-                        <TableCell
-                          className={cn(
-                            "text-right font-semibold",
-                            trade.profit_loss >= 0
-                              ? "profit-positive"
-                              : "profit-negative"
-                          )}
+              {/* Metrics */}
+              <div className="grid gap-4 md:grid-cols-3">
+                <MetricCard
+                  title="Balance Total"
+                  value={`$${totalBalance.toLocaleString()}`}
+                  icon={<Wallet className="h-4 w-4" />}
+                />
+                <MetricCard
+                  title="Capital Invertido"
+                  value={`$${investedCapital.toLocaleString()}`}
+                  icon={<TrendingUp className="h-4 w-4" />}
+                />
+                <MetricCard
+                  title="Capital Disponible"
+                  value={`$${availableCapital.toLocaleString()}`}
+                  icon={<DollarSign className="h-4 w-4" />}
+                />
+              </div>
+
+              {/* Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-muted-heading">Distribución del Capital</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <PortfolioChart
+                    invested={investedCapital}
+                    available={availableCapital}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Operaciones Section */}
+              <Card>
+                <CardHeader className="space-y-4">
+                  <CardTitle className="text-muted-heading">Operaciones</CardTitle>
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-wrap gap-2">
+                      {periods.map((period) => (
+                        <Button
+                          key={period.value}
+                          variant={selectedPeriod === period.value ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedPeriod(period.value)}
+                          className="transition-smooth"
                         >
-                          ${trade.profit_loss?.toFixed(2)}
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                          {period.label}
+                        </Button>
+                      ))}
+                    </div>
+
+                    <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
+                      <SelectTrigger className="w-full md:w-[300px]">
+                        <SelectValue placeholder="Todas las estrategias" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas las estrategias</SelectItem>
+                        {strategies.map((strategy) => (
+                          <SelectItem key={strategy.id} value={strategy.id}>
+                            {strategy.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fecha y Hora</TableHead>
+                          <TableHead>Activo</TableHead>
+                          <TableHead>Estrategia</TableHead>
+                          <TableHead className="text-right">Tamaño (Lote)</TableHead>
+                          <TableHead className="text-right">P/L</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {trades.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center text-muted-foreground">
+                              No hay operaciones para mostrar
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          trades.map((trade) => (
+                            <TableRow key={trade.id} className="transition-smooth hover:bg-muted/50">
+                              <TableCell className="font-medium">
+                                {trade.closed_at &&
+                                  format(new Date(trade.closed_at), "dd/MM/yyyy HH:mm", {
+                                    locale: es,
+                                  })}
+                              </TableCell>
+                              <TableCell>
+                                {trade.symbol}
+                              </TableCell>
+                              <TableCell>{trade.strategies?.name || "-"}</TableCell>
+                              <TableCell className="text-right">
+                                {trade.lot_size}
+                              </TableCell>
+                              <TableCell
+                                className={cn(
+                                  "text-right font-semibold",
+                                  trade.profit_loss >= 0
+                                    ? "profit-positive"
+                                    : "profit-negative"
+                                )}
+                              >
+                                ${trade.profit_loss?.toFixed(2)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          ) : (
+            <>
+              {/* Portfolio Performance View for Other Categories */}
+              <PortfolioPerformance 
+                totalValue={18066283.05}
+                change={11.99}
+                changePercent={1.93407831}
+              />
+              
+              <PositionsTable activeCategory={activeCategory} />
+            </>
+          )}
         </div>
       )}
     </DashboardLayout>
