@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { AppLayout } from "@/components/layout/AppLayout";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
 import { PortfolioChart } from "@/components/dashboard/PortfolioChart";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -166,31 +166,37 @@ export default function Dashboard() {
   ];
 
   return (
-    <AppLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-muted-heading">Dashboard</h1>
-            <p className="text-muted-foreground">
-              Vista general de tu portfolio de trading
-            </p>
+    <DashboardLayout>
+      {(activeCategory) => (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">
+                Dashboard
+              </h1>
+              <p className="text-muted-foreground mt-1">
+                {activeCategory === "aggregated" 
+                  ? "Vista consolidada de todas tus inversiones"
+                  : `Vista de ${activeCategory.split('-').map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}`
+                }
+              </p>
+            </div>
+
+            <Select value={selectedBroker} onValueChange={setSelectedBroker}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Selecciona un broker" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos los brokers</SelectItem>
+                {brokers.map((broker) => (
+                  <SelectItem key={broker.id} value={broker.id}>
+                    {broker.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-          
-          <Select value={selectedBroker} onValueChange={setSelectedBroker}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Todos los Brokers" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos los Brokers</SelectItem>
-              {brokers.map((broker) => (
-                <SelectItem key={broker.id} value={broker.id}>
-                  {broker.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
         {/* Metrics */}
         <div className="grid gap-4 md:grid-cols-3">
@@ -311,7 +317,8 @@ export default function Dashboard() {
             </div>
           </CardContent>
         </Card>
-      </div>
-    </AppLayout>
+        </div>
+      )}
+    </DashboardLayout>
   );
 }
