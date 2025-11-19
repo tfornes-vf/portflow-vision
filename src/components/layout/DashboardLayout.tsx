@@ -21,6 +21,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
 
   const categories = [
     { value: "aggregated", label: "Aggregated" },
+    { value: "interactive-brokers", label: "Interactive Brokers" },
     { value: "private-equity", label: "Private Equity" },
     { value: "real-estate", label: "Real Estate" },
     { value: "holding", label: "Holding" },
@@ -28,7 +29,6 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     { value: "caixabank", label: "CaixaBank" },
     { value: "startups", label: "Startups" },
     { value: "commonsense", label: "Commonsense" },
-    { value: "interactive-brokers", label: "Interactive Brokers" },
   ];
 
   return (
