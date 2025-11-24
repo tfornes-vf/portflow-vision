@@ -86,9 +86,12 @@ export default function Properties() {
   };
 
   const fetchTags = async () => {
+    if (!entityId) return;
+    
     const { data } = await supabase
       .from("tags")
       .select("id, name, category_id")
+      .or(`entity_id.is.null,entity_id.eq.${entityId}`)
       .order("name");
     setTags(data || []);
   };

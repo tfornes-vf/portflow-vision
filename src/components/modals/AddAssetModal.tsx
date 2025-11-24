@@ -89,7 +89,11 @@ export function AddAssetModal({
   };
 
   const fetchTags = async () => {
-    const { data } = await supabase.from("tags").select("*").order("name");
+    const { data } = await supabase
+      .from("tags")
+      .select("*")
+      .or(`entity_id.is.null,entity_id.eq.${entityId}`)
+      .order("name");
     setTags(data || []);
   };
 
