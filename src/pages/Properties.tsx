@@ -1,10 +1,6 @@
 import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { DashboardLayout } from "@/components/layout/DashboardLayout";
-import { MetricCard } from "@/components/dashboard/MetricCard";
-import { PortfolioChart } from "@/components/dashboard/PortfolioChart";
-import { PortfolioPerformance } from "@/components/dashboard/PortfolioPerformance";
-import { PositionsTable } from "@/components/dashboard/PositionsTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
@@ -22,12 +18,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Wallet, TrendingUp, DollarSign } from "lucide-react";
+import { Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
-import { es } from "date-fns/locale";
+import { AddAssetModal } from "@/components/modals/AddAssetModal";
 
 interface AssetWithValue {
   id: string;
@@ -38,87 +33,69 @@ interface AssetWithValue {
   profit_loss_percent: number;
   asset_class_hard: string;
   entity_name: string;
-  tags: Array<{ id: string; name: string; category_name: string }>;
+  tags: Array<{ id: string; name: string; category_id: string; category_name: string }>;
 }
 
-interface GroupingDimension {
-  id: string;
-  label: string;
-  type: "native" | "tag_category";
-}
-
-interface Broker {
+interface TagCategory {
   id: string;
   name: string;
 }
 
-interface Trade {
+interface Tag {
   id: string;
-  symbol: string;
-  profit_loss: number;
-  lot_size: number;
-  closed_at: string;
-  strategies: { name: string } | null;
+  name: string;
+  category_id: string;
 }
 
-type TimePeriod = "D" | "S" | "M" | "YTD" | "AÑO" | "ALL";
-
 export default function Properties() {
-  const [brokers, setBrokers] = useState<Broker[]>([]);
-  const [selectedBroker, setSelectedBroker] = useState<string>("all");
-  const [trades, setTrades] = useState<Trade[]>([]);
-  const [strategies, setStrategies] = useState<{ id: string; name: string }[]>([]);
-  const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("D");
-  const [selectedStrategy, setSelectedStrategy] = useState<string>("all");
+  const { entityId } = useParams<{ entityId: string }>();
   const [assets, setAssets] = useState<AssetWithValue[]>([]);
-  const [totalNetWorth, setTotalNetWorth] = useState(0);
-  const [totalCostBasis, setTotalCostBasis] = useState(0);
-  const [totalProfitLoss, setTotalProfitLoss] = useState(0);
-  const [groupingDimensions, setGroupingDimensions] = useState<GroupingDimension[]>([]);
-  const [selectedGrouping, setSelectedGrouping] = useState<string>("asset_class");
+  const [filteredAssets, setFilteredAssets] = useState<AssetWithValue[]>([]);
+  const [tagCategories, setTagCategories] = useState<TagCategory[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
+  
+  // Nivel 1: Categoría seleccionada (dimension)
+  const [selectedCategory, setSelectedCategory] = useState<string>("asset_class");
+  
+  // Nivel 2: Tags seleccionados (filtros activos)
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  
+  // Modal state
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchBrokers();
-    fetchStrategies();
-    fetchGroupingDimensions();
-    fetchAssets();
-  }, []);
+    if (entityId) {
+      fetchTagCategories();
+      fetchTags();
+      fetchAssets();
+    }
+  }, [entityId]);
 
   useEffect(() => {
-    fetchTrades();
-  }, [selectedPeriod, selectedStrategy]);
+    applyFilters();
+  }, [assets, activeFilters, selectedCategory]);
 
-  const fetchGroupingDimensions = async () => {
-    try {
-      const { data: categories, error } = await supabase
-        .from("tag_categories")
-        .select("id, name");
+  const fetchTagCategories = async () => {
+    const { data } = await supabase
+      .from("tag_categories")
+      .select("id, name")
+      .order("name");
+    setTagCategories(data || []);
+  };
 
-      if (error) throw error;
-
-      const dimensions: GroupingDimension[] = [
-        { id: "asset_class", label: "Tipo de Activo", type: "native" },
-        { id: "entity", label: "Entidad", type: "native" },
-      ];
-
-      if (categories) {
-        categories.forEach(cat => {
-          dimensions.push({
-            id: cat.id,
-            label: cat.name,
-            type: "tag_category"
-          });
-        });
-      }
-
-      setGroupingDimensions(dimensions);
-    } catch (error) {
-      console.error("Error fetching grouping dimensions:", error);
-    }
+  const fetchTags = async () => {
+    const { data } = await supabase
+      .from("tags")
+      .select("id, name, category_id")
+      .order("name");
+    setTags(data || []);
   };
 
   const fetchAssets = async () => {
+    if (!entityId) return;
+
     try {
       const { data: assetsData, error: assetsError } = await supabase
         .from("assets")
@@ -128,30 +105,23 @@ export default function Properties() {
           cost_basis,
           asset_class_hard,
           entity_id,
-          entities!inner(name, tenant_id)
-        `);
+          entities!inner(name)
+        `)
+        .eq("entity_id", entityId);
 
       if (assetsError) throw assetsError;
-
       if (!assetsData) return;
 
       const assetsWithValues: AssetWithValue[] = [];
-      let totalValue = 0;
-      let totalCost = 0;
 
       for (const asset of assetsData) {
-        const { data: latestValue, error: valueError } = await supabase
+        const { data: latestValue } = await supabase
           .from("market_values")
           .select("value_base")
           .eq("asset_id", asset.id)
           .order("valuation_date", { ascending: false })
           .limit(1)
           .maybeSingle();
-
-        if (valueError) {
-          console.error("Error fetching market value:", valueError);
-          continue;
-        }
 
         const currentValue = latestValue?.value_base || asset.cost_basis;
         const profitLoss = currentValue - asset.cost_basis;
@@ -167,6 +137,7 @@ export default function Properties() {
             tags!inner(
               id,
               name,
+              category_id,
               tag_categories(name)
             )
           `)
@@ -175,6 +146,7 @@ export default function Properties() {
         const tags = assetTags?.map(at => ({
           id: at.tags.id,
           name: at.tags.name,
+          category_id: at.tags.category_id,
           category_name: at.tags.tag_categories?.name || ""
         })) || [];
 
@@ -189,15 +161,9 @@ export default function Properties() {
           entity_name: asset.entities.name,
           tags
         });
-
-        totalValue += currentValue;
-        totalCost += asset.cost_basis;
       }
 
       setAssets(assetsWithValues);
-      setTotalNetWorth(totalValue);
-      setTotalCostBasis(totalCost);
-      setTotalProfitLoss(totalValue - totalCost);
     } catch (error) {
       console.error("Error fetching assets:", error);
       toast({
@@ -208,386 +174,220 @@ export default function Properties() {
     }
   };
 
-  const fetchBrokers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("brokers")
-        .select("id, name")
-        .eq("is_active", true);
-
-      if (error) throw error;
-      setBrokers(data || []);
-    } catch (error) {
-      console.error("Error fetching brokers:", error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los brokers",
-        variant: "destructive",
-      });
+  const applyFilters = () => {
+    if (activeFilters.length === 0) {
+      setFilteredAssets(assets);
+      return;
     }
-  };
 
-  const fetchStrategies = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("strategies")
-        .select("id, name")
-        .eq("is_active", true);
-
-      if (error) throw error;
-      setStrategies(data || []);
-    } catch (error) {
-      console.error("Error fetching strategies:", error);
-    }
-  };
-
-  const fetchTrades = async () => {
-    try {
-      let query = supabase
-        .from("trades")
-        .select(`
-          id,
-          symbol,
-          profit_loss,
-          lot_size,
-          closed_at,
-          strategies (name)
-        `)
-        .not("closed_at", "is", null)
-        .order("closed_at", { ascending: false });
-
-      if (selectedStrategy !== "all") {
-        query = query.eq("strategy_id", selectedStrategy);
-      }
-
-      const now = new Date();
-      let startDate: Date | null = null;
-
-      switch (selectedPeriod) {
-        case "D":
-          startDate = new Date(now.setHours(0, 0, 0, 0));
-          break;
-        case "S":
-          startDate = new Date(now.setDate(now.getDate() - now.getDay()));
-          break;
-        case "M":
-          startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-          break;
-        case "YTD":
-          startDate = new Date(now.getFullYear(), 0, 1);
-          break;
-        case "AÑO":
-          startDate = new Date(now.setFullYear(now.getFullYear() - 1));
-          break;
-      }
-
-      if (startDate) {
-        query = query.gte("closed_at", startDate.toISOString());
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setTrades(data || []);
-    } catch (error) {
-      console.error("Error fetching trades:", error);
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar las operaciones",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const groupAssets = () => {
-    const grouped: { [key: string]: AssetWithValue[] } = {};
-    
-    assets.forEach(asset => {
-      let groupKey = "Sin categoría";
-      
-      const dimension = groupingDimensions.find(d => d.id === selectedGrouping);
-      if (!dimension) return;
-
-      if (dimension.type === "native") {
-        if (selectedGrouping === "asset_class") {
-          groupKey = asset.asset_class_hard || "Sin clasificar";
-        } else if (selectedGrouping === "entity") {
-          groupKey = asset.entity_name || "Sin entidad";
-        }
+    const filtered = assets.filter((asset) => {
+      if (selectedCategory === "asset_class") {
+        return activeFilters.includes(asset.asset_class_hard);
       } else {
-        // Tag category grouping
-        const relevantTag = asset.tags.find(t => {
-          const category = groupingDimensions.find(d => d.id === selectedGrouping);
-          return t.category_name === category?.label;
-        });
-        groupKey = relevantTag?.name || "Sin asignar";
+        // Filter by tag category
+        return asset.tags.some(
+          (tag) => tag.category_id === selectedCategory && activeFilters.includes(tag.id)
+        );
       }
-
-      if (!grouped[groupKey]) {
-        grouped[groupKey] = [];
-      }
-      grouped[groupKey].push(asset);
     });
 
-    return grouped;
+    setFilteredAssets(filtered);
   };
 
-  const groupedAssets = groupAssets();
+  const getAvailableFilters = () => {
+    if (selectedCategory === "asset_class") {
+      // Native dimension: asset classes
+      const assetClasses = Array.from(new Set(assets.map(a => a.asset_class_hard)));
+      return assetClasses.map(ac => ({ id: ac, name: ac }));
+    } else {
+      // Tag category dimension
+      return tags.filter(t => t.category_id === selectedCategory);
+    }
+  };
 
-  const periods: { value: TimePeriod; label: string }[] = [
-    { value: "D", label: "D" },
-    { value: "S", label: "S" },
-    { value: "M", label: "M" },
-    { value: "YTD", label: "YTD" },
-    { value: "AÑO", label: "AÑO" },
-    { value: "ALL", label: "ALL" },
+  const toggleFilter = (filterId: string) => {
+    setActiveFilters(prev =>
+      prev.includes(filterId)
+        ? prev.filter(f => f !== filterId)
+        : [...prev, filterId]
+    );
+  };
+
+  const availableFilters = getAvailableFilters();
+  const totalValue = filteredAssets.reduce((sum, a) => sum + a.current_value, 0);
+  const totalCost = filteredAssets.reduce((sum, a) => sum + a.cost_basis, 0);
+  const totalPL = totalValue - totalCost;
+
+  const filterOptions = [
+    { id: "asset_class", label: "Tipo de Activo" },
+    ...tagCategories.map(cat => ({ id: cat.id, label: cat.name }))
   ];
 
   return (
     <AppLayout>
-      <DashboardLayout>
-        {(activeCategory) => (
-          <div className="space-y-6">
-            {activeCategory === "interactive-brokers" ? (
-              <>
-                {/* Header */}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-foreground">
-                      Dashboard
-                    </h1>
-                    <p className="text-muted-foreground mt-1">
-                      Vista de Interactive Brokers
-                    </p>
-                  </div>
-
-                  <Select value={selectedBroker} onValueChange={setSelectedBroker}>
-                    <SelectTrigger className="w-[200px]">
-                      <SelectValue placeholder="Selecciona un broker" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">Todos los brokers</SelectItem>
-                      {brokers.map((broker) => (
-                        <SelectItem key={broker.id} value={broker.id}>
-                          {broker.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Metrics */}
-                <div className="grid gap-4 md:grid-cols-3">
-                  <MetricCard
-                    title="Balance Total"
-                    value={`€${totalNetWorth.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
-                    icon={<Wallet className="h-4 w-4" />}
-                    trend={{
-                      value: totalProfitLoss > 0 ? ((totalProfitLoss / totalCostBasis) * 100) : 0,
-                      isPositive: totalProfitLoss >= 0
-                    }}
-                  />
-                  <MetricCard
-                    title="Capital Invertido"
-                    value={`€${totalCostBasis.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
-                    icon={<TrendingUp className="h-4 w-4" />}
-                  />
-                  <MetricCard
-                    title="Ganancia/Pérdida"
-                    value={`€${totalProfitLoss.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
-                    icon={<DollarSign className="h-4 w-4" />}
-                    trend={{
-                      value: totalCostBasis > 0 ? (totalProfitLoss / totalCostBasis) * 100 : 0,
-                      isPositive: totalProfitLoss >= 0
-                    }}
-                  />
-                </div>
-
-                {/* Chart */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="text-muted-heading">Distribución del Capital</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <PortfolioChart
-                      invested={totalCostBasis}
-                      available={totalNetWorth - totalCostBasis}
-                    />
-                  </CardContent>
-                </Card>
-
-                {/* Operaciones Section */}
-                <Card>
-                  <CardHeader className="space-y-4">
-                    <CardTitle className="text-muted-heading">Operaciones</CardTitle>
-                    <div className="flex flex-col gap-4">
-                      <div className="flex flex-wrap gap-2">
-                        {periods.map((period) => (
-                          <Button
-                            key={period.value}
-                            variant={selectedPeriod === period.value ? "default" : "outline"}
-                            size="sm"
-                            onClick={() => setSelectedPeriod(period.value)}
-                            className="transition-smooth"
-                          >
-                            {period.label}
-                          </Button>
-                        ))}
-                      </div>
-
-                      <Select value={selectedStrategy} onValueChange={setSelectedStrategy}>
-                        <SelectTrigger className="w-full md:w-[300px]">
-                          <SelectValue placeholder="Todas las estrategias" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="all">Todas las estrategias</SelectItem>
-                          {strategies.map((strategy) => (
-                            <SelectItem key={strategy.id} value={strategy.id}>
-                              {strategy.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="rounded-md border">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Fecha y Hora</TableHead>
-                            <TableHead>Activo</TableHead>
-                            <TableHead>Estrategia</TableHead>
-                            <TableHead className="text-right">Tamaño (Lote)</TableHead>
-                            <TableHead className="text-right">P/L</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {trades.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={5} className="text-center text-muted-foreground">
-                                No hay operaciones para mostrar
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            trades.map((trade) => (
-                              <TableRow key={trade.id} className="transition-smooth hover:bg-muted/50">
-                                <TableCell className="font-medium">
-                                  {trade.closed_at &&
-                                    format(new Date(trade.closed_at), "dd/MM/yyyy HH:mm", {
-                                      locale: es,
-                                    })}
-                                </TableCell>
-                                <TableCell>
-                                  {trade.symbol}
-                                </TableCell>
-                                <TableCell>{trade.strategies?.name || "-"}</TableCell>
-                                <TableCell className="text-right">
-                                  {trade.lot_size}
-                                </TableCell>
-                                <TableCell
-                                  className={cn(
-                                    "text-right font-semibold",
-                                    trade.profit_loss >= 0
-                                      ? "profit-positive"
-                                      : "profit-negative"
-                                  )}
-                                >
-                                  ${trade.profit_loss?.toFixed(2)}
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            ) : (
-              <>
-                {/* Portfolio Performance View for Other Categories */}
-                <PortfolioPerformance 
-                  totalValue={totalNetWorth}
-                  change={totalProfitLoss}
-                  changePercent={totalCostBasis > 0 ? (totalProfitLoss / totalCostBasis) * 100 : 0}
-                />
-                
-                {/* Dynamic Grouping Filter */}
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <CardTitle>Activos</CardTitle>
-                      <Select value={selectedGrouping} onValueChange={setSelectedGrouping}>
-                        <SelectTrigger className="w-[200px]">
-                          <SelectValue placeholder="Agrupar por" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {groupingDimensions.map((dim) => (
-                            <SelectItem key={dim.id} value={dim.id}>
-                              {dim.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-6">
-                      {Object.entries(groupedAssets).map(([groupName, groupAssets]) => (
-                        <div key={groupName}>
-                          <h3 className="text-lg font-semibold mb-3 text-foreground">
-                            {groupName}
-                          </h3>
-                          <div className="rounded-md border">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead>Nombre</TableHead>
-                                  <TableHead className="text-right">Inversión</TableHead>
-                                  <TableHead className="text-right">Valor Actual</TableHead>
-                                  <TableHead className="text-right">P/L</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {groupAssets.map((asset) => (
-                                  <TableRow key={asset.id}>
-                                    <TableCell className="font-medium">{asset.name}</TableCell>
-                                    <TableCell className="text-right">
-                                      €{asset.cost_basis.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
-                                    </TableCell>
-                                    <TableCell className="text-right">
-                                      €{asset.current_value.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
-                                    </TableCell>
-                                    <TableCell
-                                      className={cn(
-                                        "text-right font-semibold",
-                                        asset.profit_loss >= 0
-                                          ? "profit-positive"
-                                          : "profit-negative"
-                                      )}
-                                    >
-                                      {asset.profit_loss > 0 ? "+" : ""}
-                                      €{asset.profit_loss.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
-                                      {" "}
-                                      ({asset.profit_loss_percent > 0 ? "+" : ""}
-                                      {asset.profit_loss_percent.toFixed(1)}%)
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </>
-            )}
+      <div className="container mx-auto p-6 space-y-6">
+        {/* Header con selector de dimensión */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-foreground">
+              My Property
+            </h1>
+            <p className="text-muted-foreground mt-1">
+              Gestiona tus activos
+            </p>
           </div>
-        )}
-      </DashboardLayout>
+
+          <Select value={selectedCategory} onValueChange={(val) => {
+            setSelectedCategory(val);
+            setActiveFilters([]); // Reset filters cuando cambia dimensión
+          }}>
+            <SelectTrigger className="w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {filterOptions.map((option) => (
+                <SelectItem key={option.id} value={option.id}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Barra de filtros horizontal (Nivel 2) */}
+        <div className="flex flex-wrap gap-2 p-4 bg-muted/50 rounded-lg">
+          <Button
+            variant={activeFilters.length === 0 ? "default" : "outline"}
+            size="sm"
+            onClick={() => setActiveFilters([])}
+          >
+            Todos
+          </Button>
+          {availableFilters.map((filter) => (
+            <Button
+              key={filter.id}
+              variant={activeFilters.includes(filter.id) ? "default" : "outline"}
+              size="sm"
+              onClick={() => toggleFilter(filter.id)}
+            >
+              {filter.name}
+            </Button>
+          ))}
+        </div>
+
+        {/* Métricas */}
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Valor Total
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                €{totalValue.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Inversión
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                €{totalCost.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                P/L Total
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className={cn(
+                "text-2xl font-bold",
+                totalPL >= 0 ? "text-green-600" : "text-red-600"
+              )}>
+                {totalPL > 0 ? "+" : ""}
+                €{totalPL.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Tabla de activos */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Activos</CardTitle>
+            <Button onClick={() => setAddModalOpen(true)} size="sm">
+              <Plus className="h-4 w-4 mr-2" />
+              Añadir
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Inversión</TableHead>
+                    <TableHead className="text-right">Valor Actual</TableHead>
+                    <TableHead className="text-right">P/L</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredAssets.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center text-muted-foreground">
+                        No hay activos para mostrar
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredAssets.map((asset) => (
+                      <TableRow key={asset.id}>
+                        <TableCell className="font-medium">{asset.name}</TableCell>
+                        <TableCell>{asset.asset_class_hard}</TableCell>
+                        <TableCell className="text-right">
+                          €{asset.cost_basis.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          €{asset.current_value.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            "text-right font-semibold",
+                            asset.profit_loss >= 0
+                              ? "text-green-600"
+                              : "text-red-600"
+                          )}
+                        >
+                          {asset.profit_loss > 0 ? "+" : ""}
+                          €{asset.profit_loss.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+                          {" "}
+                          ({asset.profit_loss_percent > 0 ? "+" : ""}
+                          {asset.profit_loss_percent.toFixed(1)}%)
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <AddAssetModal
+        open={addModalOpen}
+        onOpenChange={setAddModalOpen}
+        entityId={entityId || ""}
+        onSuccess={fetchAssets}
+      />
     </AppLayout>
   );
 }

@@ -24,6 +24,7 @@ import {
 interface TagCategory {
   id: string;
   name: string;
+  is_mandatory: boolean;
 }
 
 interface Tag {
@@ -45,6 +46,7 @@ export function TagsManager() {
   const { toast } = useToast();
 
   const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryIsMandatory, setNewCategoryIsMandatory] = useState(false);
   const [newTagName, setNewTagName] = useState("");
   const [newTagColor, setNewTagColor] = useState("#3B82F6");
   const [newTagCategoryId, setNewTagCategoryId] = useState("");
@@ -76,7 +78,7 @@ export function TagsManager() {
 
     const { error } = await supabase
       .from("tag_categories")
-      .insert({ name: newCategoryName.trim() });
+      .insert({ name: newCategoryName.trim(), is_mandatory: newCategoryIsMandatory });
 
     if (error) {
       toast({
@@ -89,6 +91,7 @@ export function TagsManager() {
 
     toast({ title: "Categoría creada correctamente" });
     setNewCategoryName("");
+    setNewCategoryIsMandatory(false);
     setCategoryDialogOpen(false);
     fetchData();
   };
@@ -98,7 +101,7 @@ export function TagsManager() {
 
     const { error } = await supabase
       .from("tag_categories")
-      .update({ name: newCategoryName.trim() })
+      .update({ name: newCategoryName.trim(), is_mandatory: newCategoryIsMandatory })
       .eq("id", editingCategory.id);
 
     if (error) {
@@ -113,6 +116,7 @@ export function TagsManager() {
     toast({ title: "Categoría actualizada" });
     setEditingCategory(null);
     setNewCategoryName("");
+    setNewCategoryIsMandatory(false);
     setCategoryDialogOpen(false);
     fetchData();
   };
@@ -221,9 +225,11 @@ export function TagsManager() {
     if (category) {
       setEditingCategory(category);
       setNewCategoryName(category.name);
+      setNewCategoryIsMandatory(category.is_mandatory);
     } else {
       setEditingCategory(null);
       setNewCategoryName("");
+      setNewCategoryIsMandatory(false);
     }
     setCategoryDialogOpen(true);
   };
@@ -262,7 +268,14 @@ export function TagsManager() {
                 key={cat.id}
                 className="flex items-center justify-between p-3 border rounded-lg"
               >
-                <span className="font-medium">{cat.name}</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-medium">{cat.name}</span>
+                  {cat.is_mandatory && (
+                    <span className="text-xs px-2 py-1 bg-primary/10 text-primary rounded">
+                      Obligatorio
+                    </span>
+                  )}
+                </div>
                 <div className="flex gap-2">
                   <Button
                     variant="ghost"
@@ -349,6 +362,18 @@ export function TagsManager() {
                 onChange={(e) => setNewCategoryName(e.target.value)}
                 placeholder="ej: Banco, País, Sector"
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is-mandatory"
+                checked={newCategoryIsMandatory}
+                onChange={(e) => setNewCategoryIsMandatory(e.target.checked)}
+                className="h-4 w-4"
+              />
+              <Label htmlFor="is-mandatory" className="cursor-pointer">
+                Es obligatorio (requerido al crear activos)
+              </Label>
             </div>
           </div>
           <DialogFooter>

@@ -311,18 +311,21 @@ export type Database = {
         Row: {
           created_at: string | null
           id: string
+          is_mandatory: boolean | null
           name: string
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           id?: string
+          is_mandatory?: boolean | null
           name: string
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           id?: string
+          is_mandatory?: boolean | null
           name?: string
           updated_at?: string | null
         }
@@ -467,6 +470,50 @@ export type Database = {
             columns: ["strategy_id"]
             isOneToOne: false
             referencedRelation: "strategies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      transactions: {
+        Row: {
+          asset_id: string
+          created_at: string | null
+          id: string
+          notes: string | null
+          price: number
+          quantity: number
+          transaction_date: string
+          transaction_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          price: number
+          quantity: number
+          transaction_date?: string
+          transaction_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          price?: number
+          quantity?: number
+          transaction_date?: string
+          transaction_type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
             referencedColumns: ["id"]
           },
         ]

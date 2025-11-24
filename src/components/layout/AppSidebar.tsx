@@ -1,7 +1,9 @@
-import { Home, Map, Building2, User, Settings } from "lucide-react";
+import { Home, Map, Building2, User, Settings, Plus } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { EntityManagementModal } from "@/components/modals/EntityManagementModal";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -25,6 +27,7 @@ interface Entity {
 export function AppSidebar() {
   const { state } = useSidebar();
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [entityModalOpen, setEntityModalOpen] = useState(false);
 
   useEffect(() => {
     fetchEntities();
@@ -89,7 +92,19 @@ export function AppSidebar() {
         </SidebarGroup>
 
         <SidebarGroup>
-          <SidebarGroupLabel>My Property</SidebarGroupLabel>
+          <div className="flex items-center justify-between px-2">
+            <SidebarGroupLabel>My Property</SidebarGroupLabel>
+            {!isCollapsed && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0"
+                onClick={() => setEntityModalOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
           <SidebarGroupContent>
             <SidebarMenu>
               {entities.map((entity) => (
@@ -145,6 +160,12 @@ export function AppSidebar() {
           )}
         </div>
       </SidebarFooter>
+
+      <EntityManagementModal
+        open={entityModalOpen}
+        onOpenChange={setEntityModalOpen}
+        onSuccess={fetchEntities}
+      />
     </Sidebar>
   );
 }
