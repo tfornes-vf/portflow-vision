@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/layout/AppLayout";
 import { AllocationWidgets } from "@/components/dashboard/AllocationWidgets";
-import { StrategiesSection } from "@/components/dashboard/StrategiesSection";
+import { StrategiesHeatmap } from "@/components/dashboard/StrategiesHeatmap";
 import { MaptreeSection } from "@/components/dashboard/MaptreeSection";
 
 export default function Dashboard() {
@@ -17,7 +17,7 @@ export default function Dashboard() {
         </div>
 
         <AllocationWidgets />
-        <StrategiesSection />
+        <StrategiesHeatmap />
         <MaptreeSection />
       </div>
     </AppLayout>

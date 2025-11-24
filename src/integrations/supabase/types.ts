@@ -333,6 +333,7 @@ export type Database = {
           category_id: string | null
           color_hex: string | null
           created_at: string | null
+          entity_id: string | null
           id: string
           name: string
           tenant_id: string
@@ -341,6 +342,7 @@ export type Database = {
           category_id?: string | null
           color_hex?: string | null
           created_at?: string | null
+          entity_id?: string | null
           id?: string
           name: string
           tenant_id: string
@@ -349,6 +351,7 @@ export type Database = {
           category_id?: string | null
           color_hex?: string | null
           created_at?: string | null
+          entity_id?: string | null
           id?: string
           name?: string
           tenant_id?: string
@@ -359,6 +362,13 @@ export type Database = {
             columns: ["category_id"]
             isOneToOne: false
             referencedRelation: "tag_categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tags_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
             referencedColumns: ["id"]
           },
           {
