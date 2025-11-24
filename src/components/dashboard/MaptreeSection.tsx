@@ -62,10 +62,18 @@ export const MaptreeSection = () => {
         .select("asset_id, tag_id")
         .in("asset_id", assetIds);
 
-      // Fetch all tags
+      // Fetch all tags with categories
       const { data: tags } = await supabase
         .from("tags")
-        .select("id, name, category");
+        .select(`
+          id, 
+          name,
+          category_id,
+          tag_categories (
+            id,
+            name
+          )
+        `);
 
       // Create maps for quick lookup
       const latestValueMap = new Map();
@@ -99,7 +107,7 @@ export const MaptreeSection = () => {
           const assetTag = assetTags?.find(at => at.asset_id === asset.id);
           if (assetTag) {
             const tag = tagMap.get(assetTag.tag_id);
-            if (tag && tag.category === targetCategory) {
+            if (tag && tag.tag_categories?.name === targetCategory) {
               groupKey = tag.name;
             }
           }
