@@ -60,7 +60,6 @@ export function AddAssetModal({
   const [quantity, setQuantity] = useState("");
   const [costBasis, setCostBasis] = useState("");
   const [currentValue, setCurrentValue] = useState("");
-  const [assetClass, setAssetClass] = useState("");
   const [selectedTags, setSelectedTags] = useState<Record<string, string>>({});
 
   // Transacción fields
@@ -112,7 +111,6 @@ export function AddAssetModal({
     setQuantity("");
     setCostBasis("");
     setCurrentValue("");
-    setAssetClass("");
     setSelectedTags({});
     setSelectedAssetId("");
     setTxQuantity("");
@@ -136,7 +134,7 @@ export function AddAssetModal({
   };
 
   const handleCreatePosition = async () => {
-    if (!name.trim() || !costBasis || !currentValue || !assetClass) {
+    if (!name.trim() || !costBasis || !currentValue) {
       toast({
         title: "Error",
         description: "Complete todos los campos obligatorios",
@@ -146,6 +144,24 @@ export function AddAssetModal({
     }
 
     if (!validateMandatoryTags()) return;
+
+    // Determine asset_class_hard based on Type tag
+    const typeCategory = tagCategories.find((cat) => cat.name === "Type");
+    const selectedTypeTagId = typeCategory ? selectedTags[typeCategory.id] : null;
+    const selectedTypeTag = selectedTypeTagId
+      ? tags.find((t) => t.id === selectedTypeTagId)
+      : null;
+
+    // Map asset types to Liquid/Illiquid
+    const liquidTypes = ["Stocks", "Bonds", "Cash", "Crypto"];
+    const illiquidTypes = ["Private Equity", "Real Estate"];
+
+    let assetClass = "Liquid"; // default
+    if (selectedTypeTag) {
+      if (illiquidTypes.includes(selectedTypeTag.name)) {
+        assetClass = "Illiquid";
+      }
+    }
 
     try {
       // Create asset
@@ -313,21 +329,6 @@ export function AddAssetModal({
               </div>
             </div>
 
-            <div>
-              <Label>Liquidez *</Label>
-              <Select value={assetClass} onValueChange={setAssetClass}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Seleccione liquidez" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Liquid">Líquido</SelectItem>
-                  <SelectItem value="Illiquid">Ilíquido</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground mt-1">
-                El tipo específico (Stocks, Private Equity, etc.) se define en los Tags
-              </p>
-            </div>
 
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -360,7 +361,12 @@ export function AddAssetModal({
             </div>
 
             <div className="space-y-3 border-t pt-4">
-              <h3 className="font-medium">Tags</h3>
+              <div>
+                <h3 className="font-medium">Tags</h3>
+                <p className="text-xs text-muted-foreground">
+                  La liquidez (Líquido/Ilíquido) se determina automáticamente según el tipo de activo seleccionado
+                </p>
+              </div>
               {tagCategories.map((category) => (
                 <div key={category.id}>
                   <Label>
