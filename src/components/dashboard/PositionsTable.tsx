@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -10,6 +11,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Building2, DollarSign, MoreVertical } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 interface Position {
   id: string;
@@ -19,88 +22,125 @@ interface Position {
   currentPosition: number;
   profitLoss: number;
   profitLossPercent: number;
+  assetClass: string;
 }
 
 interface PositionsTableProps {
   activeCategory: string;
 }
 
+const CATEGORY_TO_TAG_MAP: Record<string, string> = {
+  "private-equity": "Private Equity",
+  "real-estate": "Real Estate",
+  "startups": "Startups",
+  "stocks": "Stocks",
+  "bonds": "Bonds",
+};
+
 export const PositionsTable = ({ activeCategory }: PositionsTableProps) => {
-  // Mock positions data - in production this would be filtered by category
-  const positions: Position[] = [
-    {
-      id: "1",
-      title: "Pistacho Fields SL",
-      icon: "dollar",
-      purchaseAmount: 3700000,
-      currentPosition: 4720000,
-      profitLoss: 243680.07,
-      profitLossPercent: 6.44,
-    },
-    {
-      id: "2",
-      title: "Qualitas Funds VA-I-FCR",
-      icon: "dollar",
-      purchaseAmount: 1399999,
-      currentPosition: 2623038,
-      profitLoss: 1223039,
-      profitLossPercent: 87.36,
-    },
-    {
-      id: "3",
-      title: "Vineyards Origen SL",
-      icon: "building",
-      purchaseAmount: 1726000,
-      currentPosition: 2000000,
-      profitLoss: 274000,
-      profitLossPercent: 15.87,
-    },
-    {
-      id: "4",
-      title: "Cisneros 4,08B3, Bellaterra",
-      icon: "building",
-      purchaseAmount: 1000000,
-      currentPosition: 1700000,
-      profitLoss: 63289.83,
-      profitLossPercent: 3.87,
-    },
-    {
-      id: "5",
-      title: "Montserny 8, 08B3, Bellaterra",
-      icon: "building",
-      purchaseAmount: 1200000,
-      currentPosition: 1200000,
-      profitLoss: 0,
-      profitLossPercent: 0,
-    },
-    {
-      id: "6",
-      title: "Sphere Sotogrande",
-      icon: "building",
-      purchaseAmount: 730813,
-      currentPosition: 858000,
-      profitLoss: 24443.64,
-      profitLossPercent: 2.96,
-    },
-    {
-      id: "7",
-      title: "Masia Can Santamaria, Sant Feliu Sasserra, 08174",
-      icon: "building",
-      purchaseAmount: 465000,
-      currentPosition: 780000,
-      profitLoss: 36501.02,
-      profitLossPercent: 4.77,
-    },
-    {
-      id: "8",
-      title: "Qualitas Funds Direct II SCR B",
-      icon: "dollar",
-      purchaseAmount: 545000,
-      currentPosition: 724850,
-      profitLoss: 45512.97,
-      profitLossPercent: 6.79,
-    },
-  ];
+  const [positions, setPositions] = useState<Position[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetchPositions();
+  }, [activeCategory]);
+
+  const fetchPositions = async () => {
+    try {
+      setLoading(true);
+      
+      let query = supabase
+        .from("assets")
+        .select(`
+          id,
+          name,
+          cost_basis,
+          asset_class_hard,
+          asset_tags (
+            tags (
+              name,
+              category
+            )
+          )
+        `);
+
+      const { data: assetsData, error: assetsError } = await query;
+
+      if (assetsError) throw assetsError;
+      if (!assetsData) {
+        setPositions([]);
+        return;
+      }
+
+      let filteredAssets = assetsData;
+
+      if (activeCategory !== "aggregated") {
+        const targetTag = CATEGORY_TO_TAG_MAP[activeCategory];
+        
+        if (targetTag) {
+          filteredAssets = assetsData.filter(asset => 
+            asset.asset_tags?.some((at: any) => 
+              at.tags?.name === targetTag
+            )
+          );
+        } else {
+          const bankTags = ["Andbank", "Santander", "CaixaBank", "Creand"];
+          const targetBank = activeCategory === "interactive-brokers" 
+            ? null 
+            : bankTags.find(bank => bank.toLowerCase() === activeCategory.toLowerCase());
+
+          if (targetBank) {
+            filteredAssets = assetsData.filter(asset =>
+              asset.asset_tags?.some((at: any) =>
+                at.tags?.name === targetBank
+              )
+            );
+          }
+        }
+      }
+
+      const positionsWithValues: Position[] = [];
+
+      for (const asset of filteredAssets) {
+        const { data: latestValue } = await supabase
+          .from("market_values")
+          .select("value_base")
+          .eq("asset_id", asset.id)
+          .order("valuation_date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        const currentValue = latestValue?.value_base || asset.cost_basis;
+        const profitLoss = currentValue - asset.cost_basis;
+        const profitLossPercent = asset.cost_basis > 0 
+          ? (profitLoss / asset.cost_basis) * 100 
+          : 0;
+
+        positionsWithValues.push({
+          id: asset.id,
+          title: asset.name,
+          icon: asset.asset_class_hard === "Liquid" ? "dollar" : "building",
+          purchaseAmount: asset.cost_basis,
+          currentPosition: currentValue,
+          profitLoss,
+          profitLossPercent,
+          assetClass: asset.asset_class_hard,
+        });
+      }
+
+      setPositions(positionsWithValues);
+    } catch (error) {
+      console.error("Error fetching positions:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar las posiciones",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const periods = ["1D", "1W", "1M", "YTD", "1Y", "Max"];
 
@@ -139,7 +179,20 @@ export const PositionsTable = ({ activeCategory }: PositionsTableProps) => {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {positions.map((position) => (
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    Cargando posiciones...
+                  </TableCell>
+                </TableRow>
+              ) : positions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="text-center text-muted-foreground">
+                    No hay posiciones para mostrar
+                  </TableCell>
+                </TableRow>
+              ) : (
+                positions.map((position) => (
                 <TableRow key={position.id} className="transition-smooth hover:bg-muted/50">
                   <TableCell>
                     <div className="flex items-center gap-3">
@@ -202,7 +255,8 @@ export const PositionsTable = ({ activeCategory }: PositionsTableProps) => {
                     </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+              ))
+              )}
             </TableBody>
           </Table>
         </div>
