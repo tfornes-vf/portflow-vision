@@ -97,7 +97,10 @@ export const MaptreeSection = () => {
   const CustomizedContent = (props: any) => {
     const { x, y, width, height, name, size } = props;
 
-    if (width < 50 || height < 30) return null;
+    // Guard against undefined or invalid values
+    if (!x || !y || !width || !height || width < 50 || height < 30 || !size || !name) {
+      return null;
+    }
 
     return (
       <g>
@@ -151,21 +154,27 @@ export const MaptreeSection = () => {
         </Select>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={400}>
-          <Treemap
-            data={treemapData}
-            dataKey="size"
-            aspectRatio={4 / 3}
-            stroke="hsl(var(--background))"
-            content={<CustomizedContent />}
-          >
-            <Tooltip
-              formatter={(value: number) =>
-                `€${value.toLocaleString("es-ES", { maximumFractionDigits: 0 })}`
-              }
-            />
-          </Treemap>
-        </ResponsiveContainer>
+        {treemapData.length === 0 ? (
+          <div className="flex items-center justify-center h-[400px] text-muted-foreground">
+            Cargando datos del portfolio...
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={400}>
+            <Treemap
+              data={treemapData}
+              dataKey="size"
+              aspectRatio={4 / 3}
+              stroke="hsl(var(--background))"
+              content={<CustomizedContent />}
+            >
+              <Tooltip
+                formatter={(value: number) =>
+                  `€${value?.toLocaleString("es-ES", { maximumFractionDigits: 0 }) || "0"}`
+                }
+              />
+            </Treemap>
+          </ResponsiveContainer>
+        )}
       </CardContent>
     </Card>
   );
