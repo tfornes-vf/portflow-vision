@@ -36,6 +36,15 @@ interface AssetWithValue {
   current_value: number;
   profit_loss: number;
   profit_loss_percent: number;
+  asset_class_hard: string;
+  entity_name: string;
+  tags: Array<{ id: string; name: string; category_name: string }>;
+}
+
+interface GroupingDimension {
+  id: string;
+  label: string;
+  type: "native" | "tag_category";
 }
 
 interface Broker {
@@ -65,17 +74,49 @@ export default function Properties() {
   const [totalNetWorth, setTotalNetWorth] = useState(0);
   const [totalCostBasis, setTotalCostBasis] = useState(0);
   const [totalProfitLoss, setTotalProfitLoss] = useState(0);
+  const [groupingDimensions, setGroupingDimensions] = useState<GroupingDimension[]>([]);
+  const [selectedGrouping, setSelectedGrouping] = useState<string>("asset_class");
   const { toast } = useToast();
 
   useEffect(() => {
     fetchBrokers();
     fetchStrategies();
+    fetchGroupingDimensions();
     fetchAssets();
   }, []);
 
   useEffect(() => {
     fetchTrades();
   }, [selectedPeriod, selectedStrategy]);
+
+  const fetchGroupingDimensions = async () => {
+    try {
+      const { data: categories, error } = await supabase
+        .from("tag_categories")
+        .select("id, name");
+
+      if (error) throw error;
+
+      const dimensions: GroupingDimension[] = [
+        { id: "asset_class", label: "Tipo de Activo", type: "native" },
+        { id: "entity", label: "Entidad", type: "native" },
+      ];
+
+      if (categories) {
+        categories.forEach(cat => {
+          dimensions.push({
+            id: cat.id,
+            label: cat.name,
+            type: "tag_category"
+          });
+        });
+      }
+
+      setGroupingDimensions(dimensions);
+    } catch (error) {
+      console.error("Error fetching grouping dimensions:", error);
+    }
+  };
 
   const fetchAssets = async () => {
     try {
@@ -85,8 +126,9 @@ export default function Properties() {
           id,
           name,
           cost_basis,
+          asset_class_hard,
           entity_id,
-          entities!inner(tenant_id)
+          entities!inner(name, tenant_id)
         `);
 
       if (assetsError) throw assetsError;
@@ -117,6 +159,25 @@ export default function Properties() {
           ? (profitLoss / asset.cost_basis) * 100 
           : 0;
 
+        // Fetch tags for this asset
+        const { data: assetTags } = await supabase
+          .from("asset_tags")
+          .select(`
+            tag_id,
+            tags!inner(
+              id,
+              name,
+              tag_categories(name)
+            )
+          `)
+          .eq("asset_id", asset.id);
+
+        const tags = assetTags?.map(at => ({
+          id: at.tags.id,
+          name: at.tags.name,
+          category_name: at.tags.tag_categories?.name || ""
+        })) || [];
+
         assetsWithValues.push({
           id: asset.id,
           name: asset.name,
@@ -124,6 +185,9 @@ export default function Properties() {
           current_value: currentValue,
           profit_loss: profitLoss,
           profit_loss_percent: profitLossPercent,
+          asset_class_hard: asset.asset_class_hard,
+          entity_name: asset.entities.name,
+          tags
         });
 
         totalValue += currentValue;
@@ -234,6 +298,41 @@ export default function Properties() {
       });
     }
   };
+
+  const groupAssets = () => {
+    const grouped: { [key: string]: AssetWithValue[] } = {};
+    
+    assets.forEach(asset => {
+      let groupKey = "Sin categoría";
+      
+      const dimension = groupingDimensions.find(d => d.id === selectedGrouping);
+      if (!dimension) return;
+
+      if (dimension.type === "native") {
+        if (selectedGrouping === "asset_class") {
+          groupKey = asset.asset_class_hard || "Sin clasificar";
+        } else if (selectedGrouping === "entity") {
+          groupKey = asset.entity_name || "Sin entidad";
+        }
+      } else {
+        // Tag category grouping
+        const relevantTag = asset.tags.find(t => {
+          const category = groupingDimensions.find(d => d.id === selectedGrouping);
+          return t.category_name === category?.label;
+        });
+        groupKey = relevantTag?.name || "Sin asignar";
+      }
+
+      if (!grouped[groupKey]) {
+        grouped[groupKey] = [];
+      }
+      grouped[groupKey].push(asset);
+    });
+
+    return grouped;
+  };
+
+  const groupedAssets = groupAssets();
 
   const periods: { value: TimePeriod; label: string }[] = [
     { value: "D", label: "D" },
@@ -414,7 +513,76 @@ export default function Properties() {
                   changePercent={totalCostBasis > 0 ? (totalProfitLoss / totalCostBasis) * 100 : 0}
                 />
                 
-                <PositionsTable activeCategory={activeCategory} />
+                {/* Dynamic Grouping Filter */}
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle>Activos</CardTitle>
+                      <Select value={selectedGrouping} onValueChange={setSelectedGrouping}>
+                        <SelectTrigger className="w-[200px]">
+                          <SelectValue placeholder="Agrupar por" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {groupingDimensions.map((dim) => (
+                            <SelectItem key={dim.id} value={dim.id}>
+                              {dim.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-6">
+                      {Object.entries(groupedAssets).map(([groupName, groupAssets]) => (
+                        <div key={groupName}>
+                          <h3 className="text-lg font-semibold mb-3 text-foreground">
+                            {groupName}
+                          </h3>
+                          <div className="rounded-md border">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead>Nombre</TableHead>
+                                  <TableHead className="text-right">Inversión</TableHead>
+                                  <TableHead className="text-right">Valor Actual</TableHead>
+                                  <TableHead className="text-right">P/L</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {groupAssets.map((asset) => (
+                                  <TableRow key={asset.id}>
+                                    <TableCell className="font-medium">{asset.name}</TableCell>
+                                    <TableCell className="text-right">
+                                      €{asset.cost_basis.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      €{asset.current_value.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+                                    </TableCell>
+                                    <TableCell
+                                      className={cn(
+                                        "text-right font-semibold",
+                                        asset.profit_loss >= 0
+                                          ? "profit-positive"
+                                          : "profit-negative"
+                                      )}
+                                    >
+                                      {asset.profit_loss > 0 ? "+" : ""}
+                                      €{asset.profit_loss.toLocaleString('es-ES', { maximumFractionDigits: 0 })}
+                                      {" "}
+                                      ({asset.profit_loss_percent > 0 ? "+" : ""}
+                                      {asset.profit_loss_percent.toFixed(1)}%)
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
               </>
             )}
           </div>
