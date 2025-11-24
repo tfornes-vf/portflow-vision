@@ -314,20 +314,19 @@ export function AddAssetModal({
             </div>
 
             <div>
-              <Label>Tipo de Activo *</Label>
+              <Label>Liquidez *</Label>
               <Select value={assetClass} onValueChange={setAssetClass}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Seleccione tipo" />
+                  <SelectValue placeholder="Seleccione liquidez" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Stocks">Stocks</SelectItem>
-                  <SelectItem value="Bonds">Bonds</SelectItem>
-                  <SelectItem value="Real Estate">Real Estate</SelectItem>
-                  <SelectItem value="Cash">Cash</SelectItem>
-                  <SelectItem value="Private Equity">Private Equity</SelectItem>
-                  <SelectItem value="Crypto">Crypto</SelectItem>
+                  <SelectItem value="Liquid">Líquido</SelectItem>
+                  <SelectItem value="Illiquid">Ilíquido</SelectItem>
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                El tipo específico (Stocks, Private Equity, etc.) se define en los Tags
+              </p>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
