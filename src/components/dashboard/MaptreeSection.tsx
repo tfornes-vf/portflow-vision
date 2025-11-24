@@ -129,12 +129,15 @@ export const MaptreeSection = () => {
   };
 
   const CustomizedContent = (props: any) => {
-    const { x, y, width, height, name, size } = props;
+    const { x, y, width, height, name, size, fill } = props;
 
-    // Guard against undefined or invalid values
-    if (!x || !y || !width || !height || width < 50 || height < 30 || !size || !name) {
+    // Evitar celdas demasiado pequeñas o datos inválidos
+    if (!width || !height || width < 30 || height < 24 || typeof size !== "number") {
       return null;
     }
+
+    const displayName = name ?? "-";
+    const displayValue = Number.isFinite(size) ? size : 0;
 
     return (
       <g>
@@ -144,34 +147,33 @@ export const MaptreeSection = () => {
           width={width}
           height={height}
           style={{
-            fill: props.fill,
+            fill: fill ?? "hsl(var(--accent))",
             stroke: "hsl(var(--background))",
             strokeWidth: 2,
           }}
         />
         <text
           x={x + width / 2}
-          y={y + height / 2 - 10}
-          textAnchor="middle"
-          fill="hsl(var(--background))"
-          fontSize={14}
-          fontWeight="bold"
-        >
-          {name}
-        </text>
-        <text
-          x={x + width / 2}
-          y={y + height / 2 + 10}
+          y={y + height / 2 - 8}
           textAnchor="middle"
           fill="hsl(var(--background))"
           fontSize={12}
+          fontWeight="bold"
         >
-          €{size.toLocaleString("es-ES", { maximumFractionDigits: 0 })}
+          {displayName}
+        </text>
+        <text
+          x={x + width / 2}
+          y={y + height / 2 + 8}
+          textAnchor="middle"
+          fill="hsl(var(--background))"
+          fontSize={11}
+        >
+          €{displayValue.toLocaleString("es-ES", { maximumFractionDigits: 0 })}
         </text>
       </g>
     );
   };
-
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
