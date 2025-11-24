@@ -38,6 +38,80 @@ export type Database = {
         }
         Relationships: []
       }
+      asset_tags: {
+        Row: {
+          asset_id: string
+          created_at: string | null
+          tag_id: string
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string | null
+          tag_id: string
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string | null
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asset_tags_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asset_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assets: {
+        Row: {
+          asset_class_hard: string
+          cost_basis: number
+          created_at: string | null
+          currency_local: string
+          entity_id: string
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          asset_class_hard: string
+          cost_basis?: number
+          created_at?: string | null
+          currency_local?: string
+          entity_id: string
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          asset_class_hard?: string
+          cost_basis?: number
+          created_at?: string | null
+          currency_local?: string
+          entity_id?: string
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assets_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       brokers: {
         Row: {
           api_key: string
@@ -67,6 +141,86 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      entities: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          parent_id: string | null
+          tenant_id: string
+          type: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          parent_id?: string | null
+          tenant_id: string
+          type: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          parent_id?: string | null
+          tenant_id?: string
+          type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "entities_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "entities"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "entities_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      market_values: {
+        Row: {
+          asset_id: string
+          created_at: string | null
+          id: string
+          valuation_date: string
+          value_base: number
+          value_local: number
+        }
+        Insert: {
+          asset_id: string
+          created_at?: string | null
+          id?: string
+          valuation_date?: string
+          value_base: number
+          value_local: number
+        }
+        Update: {
+          asset_id?: string
+          created_at?: string | null
+          id?: string
+          valuation_date?: string
+          value_base?: number
+          value_local?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "market_values_asset_id_fkey"
+            columns: ["asset_id"]
+            isOneToOne: false
+            referencedRelation: "assets"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -122,6 +276,56 @@ export type Database = {
           is_active?: boolean | null
           name?: string
           updated_at?: string | null
+        }
+        Relationships: []
+      }
+      tags: {
+        Row: {
+          category: string
+          created_at: string | null
+          id: string
+          name: string
+          tenant_id: string
+        }
+        Insert: {
+          category: string
+          created_at?: string | null
+          id?: string
+          name: string
+          tenant_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string | null
+          id?: string
+          name?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tags_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "tenants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tenants: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
         }
         Relationships: []
       }
