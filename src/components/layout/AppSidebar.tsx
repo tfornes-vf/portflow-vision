@@ -35,9 +35,13 @@ export function AppSidebar() {
       const { data, error } = await supabase
         .from("entities")
         .select("id, name")
-        .order("name");
+        .order("name", { ascending: true });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Error fetching entities:", error);
+        return;
+      }
+      
       setEntities(data || []);
     } catch (error) {
       console.error("Error fetching entities:", error);

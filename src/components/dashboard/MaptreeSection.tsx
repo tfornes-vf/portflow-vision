@@ -28,51 +28,85 @@ export const MaptreeSection = () => {
 
   const fetchTreemapData = async () => {
     try {
+      // Fetch all assets
       const { data: assetsData, error: assetsError } = await supabase
         .from("assets")
-        .select(`
-          id,
-          name,
-          cost_basis,
-          entity_id,
-          entities!inner(name)
-        `);
+        .select("id, name, cost_basis, entity_id");
 
-      if (assetsError) throw assetsError;
+      if (assetsError) {
+        console.error("Assets error:", assetsError);
+        return;
+      }
+
+      if (!assetsData || assetsData.length === 0) {
+        console.log("No assets found");
+        return;
+      }
+
+      // Fetch entities
+      const { data: entities } = await supabase
+        .from("entities")
+        .select("id, name");
+
+      // Fetch all market values at once
+      const assetIds = assetsData.map(a => a.id);
+      const { data: marketValues } = await supabase
+        .from("market_values")
+        .select("asset_id, value_base, valuation_date")
+        .in("asset_id", assetIds)
+        .order("valuation_date", { ascending: false });
+
+      // Fetch all asset tags at once
+      const { data: assetTags } = await supabase
+        .from("asset_tags")
+        .select("asset_id, tag_id")
+        .in("asset_id", assetIds);
+
+      // Fetch all tags
+      const { data: tags } = await supabase
+        .from("tags")
+        .select("id, name, category");
+
+      // Create maps for quick lookup
+      const latestValueMap = new Map();
+      marketValues?.forEach(mv => {
+        if (!latestValueMap.has(mv.asset_id)) {
+          latestValueMap.set(mv.asset_id, mv.value_base);
+        }
+      });
+
+      const entityMap = new Map();
+      entities?.forEach(entity => {
+        entityMap.set(entity.id, entity.name);
+      });
+
+      const tagMap = new Map();
+      tags?.forEach(tag => {
+        tagMap.set(tag.id, tag);
+      });
 
       const groupedData: { [key: string]: number } = {};
 
-      for (const asset of assetsData || []) {
-        const { data: latestValue } = await supabase
-          .from("market_values")
-          .select("value_base")
-          .eq("asset_id", asset.id)
-          .order("valuation_date", { ascending: false })
-          .limit(1)
-          .maybeSingle();
+      assetsData.forEach(asset => {
+        const currentValue = Number(latestValueMap.get(asset.id) || asset.cost_basis);
 
-        const currentValue = latestValue?.value_base || asset.cost_basis;
-
-        let groupKey = "";
+        let groupKey = "Unknown";
 
         if (groupBy === "entity") {
-          groupKey = asset.entities.name;
+          groupKey = entityMap.get(asset.entity_id) || "Unknown";
         } else {
-          // Get tags for status or bank
-          const { data: tags } = await supabase
-            .from("asset_tags")
-            .select(`
-              tags!inner(name, category)
-            `)
-            .eq("asset_id", asset.id);
-
           const targetCategory = groupBy === "status" ? "Status" : "Bank";
-          const tag = tags?.find((t: any) => t.tags.category === targetCategory);
-          groupKey = tag?.tags.name || "Unknown";
+          const assetTag = assetTags?.find(at => at.asset_id === asset.id);
+          if (assetTag) {
+            const tag = tagMap.get(assetTag.tag_id);
+            if (tag && tag.category === targetCategory) {
+              groupKey = tag.name;
+            }
+          }
         }
 
         groupedData[groupKey] = (groupedData[groupKey] || 0) + currentValue;
-      }
+      });
 
       const colors = [
         "hsl(var(--accent))",

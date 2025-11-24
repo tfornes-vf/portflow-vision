@@ -18,50 +18,73 @@ export const AllocationWidgets = () => {
 
   const fetchAllocationData = async () => {
     try {
-      // Fetch assets with their latest market values
+      // Fetch all assets
       const { data: assetsData, error: assetsError } = await supabase
         .from("assets")
-        .select(`
-          id,
-          asset_class_hard,
-          cost_basis
-        `);
+        .select("id, asset_class_hard, cost_basis");
 
-      if (assetsError) throw assetsError;
+      if (assetsError) {
+        console.error("Assets error:", assetsError);
+        return;
+      }
 
-      // Aggregate by Liquid/Illiquid
+      if (!assetsData || assetsData.length === 0) {
+        console.log("No assets found");
+        return;
+      }
+
+      // Fetch all market values at once
+      const assetIds = assetsData.map(a => a.id);
+      const { data: marketValues } = await supabase
+        .from("market_values")
+        .select("asset_id, value_base, valuation_date")
+        .in("asset_id", assetIds)
+        .order("valuation_date", { ascending: false });
+
+      // Fetch all asset tags at once
+      const { data: assetTags } = await supabase
+        .from("asset_tags")
+        .select("asset_id, tag_id")
+        .in("asset_id", assetIds);
+
+      // Fetch all tags
+      const { data: tags } = await supabase
+        .from("tags")
+        .select("id, name, category");
+
+      // Create maps for quick lookup
+      const latestValueMap = new Map();
+      marketValues?.forEach(mv => {
+        if (!latestValueMap.has(mv.asset_id)) {
+          latestValueMap.set(mv.asset_id, mv.value_base);
+        }
+      });
+
+      const tagMap = new Map();
+      tags?.forEach(tag => {
+        tagMap.set(tag.id, tag);
+      });
+
+      // Aggregate data
       const liquidityMap: { [key: string]: number } = {};
-      const statusMap: { [key: string]: number } = { Afecto: 0, "No Afecto": 0 };
+      const statusMap: { [key: string]: number } = {};
 
-      for (const asset of assetsData || []) {
-        // Get latest market value
-        const { data: latestValue } = await supabase
-          .from("market_values")
-          .select("value_base")
-          .eq("asset_id", asset.id)
-          .order("valuation_date", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        const currentValue = latestValue?.value_base || asset.cost_basis;
+      assetsData.forEach(asset => {
+        const currentValue = latestValueMap.get(asset.id) || asset.cost_basis;
 
         // Aggregate by asset class
         const assetClass = asset.asset_class_hard || "Unknown";
-        liquidityMap[assetClass] = (liquidityMap[assetClass] || 0) + currentValue;
+        liquidityMap[assetClass] = (liquidityMap[assetClass] || 0) + Number(currentValue);
 
-        // Get tags for status
-        const { data: tags } = await supabase
-          .from("asset_tags")
-          .select(`
-            tags!inner(name, category)
-          `)
-          .eq("asset_id", asset.id);
-
-        const statusTag = tags?.find((t: any) => t.tags.category === "Status");
-        if (statusTag) {
-          statusMap[statusTag.tags.name] = (statusMap[statusTag.tags.name] || 0) + currentValue;
+        // Get status tag
+        const assetTag = assetTags?.find(at => at.asset_id === asset.id);
+        if (assetTag) {
+          const tag = tagMap.get(assetTag.tag_id);
+          if (tag && tag.category === "Status") {
+            statusMap[tag.name] = (statusMap[tag.name] || 0) + Number(currentValue);
+          }
         }
-      }
+      });
 
       setLiquidityData(
         Object.entries(liquidityMap).map(([name, value]) => ({ name, value }))
