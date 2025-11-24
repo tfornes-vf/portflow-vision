@@ -51,7 +51,6 @@ export function AppSidebar() {
   const dashboardItems = [
     { title: "Daily", url: "/", icon: Home },
     { title: "Maptree", url: "/maptree", icon: Map },
-    { title: "Configuración", url: "/settings", icon: Settings },
   ];
 
   const isCollapsed = state === "collapsed";
@@ -106,6 +105,25 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Configuración</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <NavLink
+                    to="/settings"
+                    className="hover:bg-sidebar-accent"
+                  >
+                    <Settings className="h-4 w-4" />
+                    {!isCollapsed && <span>Configuración</span>}
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
