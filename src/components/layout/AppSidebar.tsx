@@ -1,9 +1,27 @@
-import { Home, Map, Building2, User, Settings, Plus } from "lucide-react";
+import { Home, Map, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { EntityManagementModal } from "@/components/modals/EntityManagementModal";
+import { EntitySettingsDialog } from "@/components/modals/EntitySettingsDialog";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { toast } from "@/hooks/use-toast";
 import {
   Sidebar,
   SidebarContent,
@@ -22,12 +40,17 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 interface Entity {
   id: string;
   name: string;
+  type_id: string | null;
 }
 
 export function AppSidebar() {
   const { state } = useSidebar();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityModalOpen, setEntityModalOpen] = useState(false);
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+  const [newName, setNewName] = useState("");
 
   useEffect(() => {
     fetchEntities();
@@ -37,7 +60,7 @@ export function AppSidebar() {
     try {
       const { data, error } = await supabase
         .from("entities")
-        .select("id, name")
+        .select("id, name, type_id")
         .order("name", { ascending: true });
 
       if (error) {
@@ -48,6 +71,41 @@ export function AppSidebar() {
       setEntities(data || []);
     } catch (error) {
       console.error("Error fetching entities:", error);
+    }
+  };
+
+  const handleRename = (entity: Entity) => {
+    setSelectedEntity(entity);
+    setNewName(entity.name);
+    setRenameDialogOpen(true);
+  };
+
+  const handleSettings = (entity: Entity) => {
+    setSelectedEntity(entity);
+    setSettingsDialogOpen(true);
+  };
+
+  const saveRename = async () => {
+    if (!selectedEntity || !newName.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from("entities")
+        .update({ name: newName.trim() })
+        .eq("id", selectedEntity.id);
+
+      if (error) throw error;
+
+      toast({ title: "Nombre actualizado correctamente" });
+      setRenameDialogOpen(false);
+      fetchEntities();
+    } catch (error) {
+      console.error("Error renaming entity:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el nombre",
+        variant: "destructive",
+      });
     }
   };
 
@@ -109,15 +167,40 @@ export function AppSidebar() {
             <SidebarMenu>
               {entities.map((entity) => (
                 <SidebarMenuItem key={entity.id}>
-                  <SidebarMenuButton asChild>
-                    <NavLink
-                      to={`/properties/${entity.id}`}
-                      className="hover:bg-sidebar-accent"
-                    >
-                      <Building2 className="h-4 w-4" />
-                      {!isCollapsed && <span>{entity.name}</span>}
-                    </NavLink>
-                  </SidebarMenuButton>
+                  <div className="group flex items-center w-full">
+                    <SidebarMenuButton asChild className="flex-1">
+                      <NavLink
+                        to={`/properties/${entity.id}`}
+                        className="hover:bg-sidebar-accent"
+                      >
+                        <Building2 className="h-4 w-4" />
+                        {!isCollapsed && <span>{entity.name}</span>}
+                      </NavLink>
+                    </SidebarMenuButton>
+                    {!isCollapsed && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                          >
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleRename(entity)}>
+                            <Edit2 className="h-3 w-3 mr-2" />
+                            Cambiar nombre
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleSettings(entity)}>
+                            <SettingsIcon className="h-3 w-3 mr-2" />
+                            Configuración
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </SidebarMenuItem>
               ))}
             </SidebarMenu>
@@ -166,6 +249,43 @@ export function AppSidebar() {
         onOpenChange={setEntityModalOpen}
         onSuccess={fetchEntities}
       />
+
+      <Dialog open={renameDialogOpen} onOpenChange={setRenameDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cambiar nombre</DialogTitle>
+            <DialogDescription>
+              Ingresa el nuevo nombre para {selectedEntity?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="new-name">Nuevo nombre</Label>
+            <Input
+              id="new-name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="Nombre de la entidad"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRenameDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={saveRename}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {selectedEntity && (
+        <EntitySettingsDialog
+          entityId={selectedEntity.id}
+          entityName={selectedEntity.name}
+          entityTypeId={selectedEntity.type_id}
+          open={settingsDialogOpen}
+          onOpenChange={setSettingsDialogOpen}
+          onSuccess={fetchEntities}
+        />
+      )}
     </Sidebar>
   );
 }
