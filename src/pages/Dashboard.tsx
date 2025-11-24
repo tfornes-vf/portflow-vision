@@ -28,6 +28,15 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 import { es } from "date-fns/locale";
 
+interface AssetWithValue {
+  id: string;
+  name: string;
+  cost_basis: number;
+  current_value: number;
+  profit_loss: number;
+  profit_loss_percent: number;
+}
+
 interface Broker {
   id: string;
   name: string;
@@ -51,21 +60,88 @@ export default function Dashboard() {
   const [strategies, setStrategies] = useState<{ id: string; name: string }[]>([]);
   const [selectedPeriod, setSelectedPeriod] = useState<TimePeriod>("D");
   const [selectedStrategy, setSelectedStrategy] = useState<string>("all");
+  const [assets, setAssets] = useState<AssetWithValue[]>([]);
+  const [totalNetWorth, setTotalNetWorth] = useState(0);
+  const [totalCostBasis, setTotalCostBasis] = useState(0);
+  const [totalProfitLoss, setTotalProfitLoss] = useState(0);
   const { toast } = useToast();
-
-  // Mock data - en producción esto vendría de la API del broker
-  const totalBalance = 50000;
-  const investedCapital = 32000;
-  const availableCapital = totalBalance - investedCapital;
 
   useEffect(() => {
     fetchBrokers();
     fetchStrategies();
+    fetchAssets();
   }, []);
 
   useEffect(() => {
     fetchTrades();
   }, [selectedPeriod, selectedStrategy]);
+
+  const fetchAssets = async () => {
+    try {
+      const { data: assetsData, error: assetsError } = await supabase
+        .from("assets")
+        .select(`
+          id,
+          name,
+          cost_basis,
+          entity_id,
+          entities!inner(tenant_id)
+        `);
+
+      if (assetsError) throw assetsError;
+
+      if (!assetsData) return;
+
+      const assetsWithValues: AssetWithValue[] = [];
+      let totalValue = 0;
+      let totalCost = 0;
+
+      for (const asset of assetsData) {
+        const { data: latestValue, error: valueError } = await supabase
+          .from("market_values")
+          .select("value_base")
+          .eq("asset_id", asset.id)
+          .order("valuation_date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (valueError) {
+          console.error("Error fetching market value:", valueError);
+          continue;
+        }
+
+        const currentValue = latestValue?.value_base || asset.cost_basis;
+        const profitLoss = currentValue - asset.cost_basis;
+        const profitLossPercent = asset.cost_basis > 0 
+          ? (profitLoss / asset.cost_basis) * 100 
+          : 0;
+
+        assetsWithValues.push({
+          id: asset.id,
+          name: asset.name,
+          cost_basis: asset.cost_basis,
+          current_value: currentValue,
+          profit_loss: profitLoss,
+          profit_loss_percent: profitLossPercent,
+        });
+
+        totalValue += currentValue;
+        totalCost += asset.cost_basis;
+      }
+
+      setAssets(assetsWithValues);
+      setTotalNetWorth(totalValue);
+      setTotalCostBasis(totalCost);
+      setTotalProfitLoss(totalValue - totalCost);
+    } catch (error) {
+      console.error("Error fetching assets:", error);
+      toast({
+        title: "Error",
+        description: "No se pudieron cargar los activos",
+        variant: "destructive",
+      });
+    }
+  };
 
   const fetchBrokers = async () => {
     try {
@@ -203,18 +279,26 @@ export default function Dashboard() {
               <div className="grid gap-4 md:grid-cols-3">
                 <MetricCard
                   title="Balance Total"
-                  value={`$${totalBalance.toLocaleString()}`}
+                  value={`€${totalNetWorth.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
                   icon={<Wallet className="h-4 w-4" />}
+                  trend={{
+                    value: totalProfitLoss > 0 ? ((totalProfitLoss / totalCostBasis) * 100) : 0,
+                    isPositive: totalProfitLoss >= 0
+                  }}
                 />
                 <MetricCard
                   title="Capital Invertido"
-                  value={`$${investedCapital.toLocaleString()}`}
+                  value={`€${totalCostBasis.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
                   icon={<TrendingUp className="h-4 w-4" />}
                 />
                 <MetricCard
-                  title="Capital Disponible"
-                  value={`$${availableCapital.toLocaleString()}`}
+                  title="Ganancia/Pérdida"
+                  value={`€${totalProfitLoss.toLocaleString('es-ES', { maximumFractionDigits: 0 })}`}
                   icon={<DollarSign className="h-4 w-4" />}
+                  trend={{
+                    value: totalCostBasis > 0 ? (totalProfitLoss / totalCostBasis) * 100 : 0,
+                    isPositive: totalProfitLoss >= 0
+                  }}
                 />
               </div>
 
@@ -225,8 +309,8 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <PortfolioChart
-                    invested={investedCapital}
-                    available={availableCapital}
+                    invested={totalCostBasis}
+                    available={totalNetWorth - totalCostBasis}
                   />
                 </CardContent>
               </Card>
@@ -323,9 +407,9 @@ export default function Dashboard() {
             <>
               {/* Portfolio Performance View for Other Categories */}
               <PortfolioPerformance 
-                totalValue={18066283.05}
-                change={11.99}
-                changePercent={1.93407831}
+                totalValue={totalNetWorth}
+                change={totalProfitLoss}
+                changePercent={totalCostBasis > 0 ? (totalProfitLoss / totalCostBasis) * 100 : 0}
               />
               
               <PositionsTable activeCategory={activeCategory} />
