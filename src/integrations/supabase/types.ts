@@ -149,7 +149,7 @@ export type Database = {
           name: string
           parent_id: string | null
           tenant_id: string
-          type: string
+          type_id: string | null
           updated_at: string | null
         }
         Insert: {
@@ -158,7 +158,7 @@ export type Database = {
           name: string
           parent_id?: string | null
           tenant_id: string
-          type: string
+          type_id?: string | null
           updated_at?: string | null
         }
         Update: {
@@ -167,7 +167,7 @@ export type Database = {
           name?: string
           parent_id?: string | null
           tenant_id?: string
-          type?: string
+          type_id?: string | null
           updated_at?: string | null
         }
         Relationships: [
@@ -185,7 +185,35 @@ export type Database = {
             referencedRelation: "tenants"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "entities_type_id_fkey"
+            columns: ["type_id"]
+            isOneToOne: false
+            referencedRelation: "entity_types"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      entity_types: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
       }
       market_values: {
         Row: {
@@ -279,29 +307,60 @@ export type Database = {
         }
         Relationships: []
       }
+      tag_categories: {
+        Row: {
+          created_at: string | null
+          id: string
+          name: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       tags: {
         Row: {
-          category: string
+          category_id: string | null
+          color_hex: string | null
           created_at: string | null
           id: string
           name: string
           tenant_id: string
         }
         Insert: {
-          category: string
+          category_id?: string | null
+          color_hex?: string | null
           created_at?: string | null
           id?: string
           name: string
           tenant_id: string
         }
         Update: {
-          category?: string
+          category_id?: string | null
+          color_hex?: string | null
           created_at?: string | null
           id?: string
           name?: string
           tenant_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "tags_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "tag_categories"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "tags_tenant_id_fkey"
             columns: ["tenant_id"]
