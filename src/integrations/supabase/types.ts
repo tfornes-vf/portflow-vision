@@ -215,6 +215,60 @@ export type Database = {
         }
         Relationships: []
       }
+      ib_trades: {
+        Row: {
+          account_id: string
+          amount: number
+          asset_class: string
+          commission: number
+          created_at: string
+          currency: string
+          date_time: string
+          ib_trade_id: string
+          id: string
+          price: number
+          quantity: number
+          realized_pnl: number | null
+          side: string
+          symbol: string
+          updated_at: string
+        }
+        Insert: {
+          account_id: string
+          amount: number
+          asset_class: string
+          commission: number
+          created_at?: string
+          currency: string
+          date_time: string
+          ib_trade_id: string
+          id?: string
+          price: number
+          quantity: number
+          realized_pnl?: number | null
+          side: string
+          symbol: string
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          amount?: number
+          asset_class?: string
+          commission?: number
+          created_at?: string
+          currency?: string
+          date_time?: string
+          ib_trade_id?: string
+          id?: string
+          price?: number
+          quantity?: number
+          realized_pnl?: number | null
+          side?: string
+          symbol?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       market_values: {
         Row: {
           asset_id: string
