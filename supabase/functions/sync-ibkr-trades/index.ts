@@ -83,20 +83,26 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       attempts++;
     }
     
-    if (!reportXml.includes("<Trade")) {
+    // Log first 500 chars of XML for debugging
+    console.log(`📄 XML preview (${reportType}):`, reportXml.substring(0, 500));
+    
+    if (!reportXml.includes("Trade")) {
       console.log(`No trades found in ${reportType}`);
       return [];
     }
     
-    // Parse only <Trade> elements from XML
+    // Parse <Trade> elements - handle both self-closing and with attributes on multiple lines
     const trades: IBKRTrade[] = [];
-    const tradeMatches = reportXml.matchAll(/<Trade\s+([^>]+)\/>/g);
     
-    for (const match of tradeMatches) {
+    // More flexible regex to match Trade elements
+    const tradeRegex = /<Trade\s+([^>]*?)\s*\/>/gs;
+    let match;
+    
+    while ((match = tradeRegex.exec(reportXml)) !== null) {
       const attrs = match[1];
       
       const getAttr = (name: string): string => {
-        const attrMatch = attrs.match(new RegExp(`${name}="([^"]*)"`, 'i'));
+        const attrMatch = attrs.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
         return attrMatch ? attrMatch[1] : "";
       };
       
@@ -122,6 +128,9 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     }
     
     console.log(`✅ Downloaded ${trades.length} trades from ${reportType}`);
+    if (trades.length > 0) {
+      console.log(`📊 First trade sample:`, JSON.stringify(trades[0]));
+    }
     return trades;
     
   } catch (error) {
