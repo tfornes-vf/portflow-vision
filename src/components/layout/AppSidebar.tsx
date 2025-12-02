@@ -1,4 +1,4 @@
-import { Home, Map, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon } from "lucide-react";
+import { Home, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon, LineChart } from "lucide-react";
 import { NavLink } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
@@ -111,7 +111,7 @@ export function AppSidebar() {
 
   const dashboardItems = [
     { title: "Daily", url: "/", icon: Home },
-    { title: "Maptree", url: "/maptree", icon: Map },
+    { title: "Trading", url: "/trading", icon: LineChart },
   ];
 
   const isCollapsed = state === "collapsed";
