@@ -217,49 +217,61 @@ export default function Trading() {
   }, [trades]);
 
   const kpis = useMemo((): KPIs => {
-    // Filter trades with realized P&L
-    const tradesWithPnL = filteredByPeriod.filter(t => t.realized_pnl !== null);
-    const wins = tradesWithPnL.filter(t => (t.realized_pnl || 0) > 0);
-    const losses = tradesWithPnL.filter(t => (t.realized_pnl || 0) < 0);
+    // Only count trades with actual realized P&L (closing trades)
+    const closingTrades = filteredByPeriod.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    const wins = closingTrades.filter(t => (t.realized_pnl || 0) > 0);
+    const losses = closingTrades.filter(t => (t.realized_pnl || 0) < 0);
 
-    const totalPnL = tradesWithPnL.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
-    const winRate = tradesWithPnL.length > 0 ? (wins.length / tradesWithPnL.length) * 100 : 0;
+    // Total P&L for the filtered period
+    const totalPnL = closingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
+    const winRate = closingTrades.length > 0 ? (wins.length / closingTrades.length) * 100 : 0;
     const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losses.length) : 0;
 
-    // Calculate cumulative balance from all trades
+    // Get current balance from latest trade (all trades, not filtered)
     const sortedAllTrades = [...trades].sort((a, b) => 
-      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+      new Date(b.date_time).getTime() - new Date(a.date_time).getTime() // descending
     );
     
-    // If saldo_actual exists and is valid, use it; otherwise calculate from realized_pnl
-    let currentBalance = INITIAL_BALANCE;
-    let peak = INITIAL_BALANCE;
-    let maxDrawdown = 0;
-    const balanceHistory: number[] = [];
-    
-    for (const trade of sortedAllTrades) {
-      // Use saldo_actual if valid, otherwise accumulate realized_pnl
-      if (trade.saldo_actual && trade.saldo_actual > 0) {
-        currentBalance = trade.saldo_actual;
-      } else {
-        currentBalance += (trade.realized_pnl || 0);
-      }
-      
-      balanceHistory.push(currentBalance);
-      
-      if (currentBalance > peak) peak = currentBalance;
-      const drawdown = peak - currentBalance;
-      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-    }
+    const latestTrade = sortedAllTrades[0];
+    const currentBalance = latestTrade?.saldo_actual && latestTrade.saldo_actual > 0 
+      ? latestTrade.saldo_actual 
+      : trades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) + INITIAL_BALANCE;
     
     const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
 
-    // Sharpe ratio calculation based on daily returns
-    const returns = tradesWithPnL.map(t => t.realized_pnl || 0);
-    const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
-    const variance = returns.length > 1 
-      ? returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / (returns.length - 1)
+    // Calculate max drawdown from all trades
+    const sortedForDrawdown = [...trades].sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    );
+    
+    let runningBalance = INITIAL_BALANCE;
+    let peak = INITIAL_BALANCE;
+    let maxDrawdown = 0;
+    
+    for (const trade of sortedForDrawdown) {
+      if (trade.saldo_actual && trade.saldo_actual > 0) {
+        runningBalance = trade.saldo_actual;
+      } else {
+        runningBalance += (trade.realized_pnl || 0);
+      }
+      
+      if (runningBalance > peak) peak = runningBalance;
+      const drawdown = peak - runningBalance;
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown;
+    }
+
+    // Sharpe ratio based on daily returns
+    const dailyPnL: Record<string, number> = {};
+    filteredByPeriod.forEach(t => {
+      const day = format(parseISO(t.date_time), "yyyy-MM-dd");
+      dailyPnL[day] = (dailyPnL[day] || 0) + (t.realized_pnl || 0);
+    });
+    
+    const dailyReturns = Object.values(dailyPnL).filter(v => v !== 0);
+    const avgReturn = dailyReturns.length > 0 ? dailyReturns.reduce((a, b) => a + b, 0) / dailyReturns.length : 0;
+    const variance = dailyReturns.length > 1 
+      ? dailyReturns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / (dailyReturns.length - 1)
       : 0;
     const stdDev = Math.sqrt(variance);
     const sharpeRatio = stdDev > 0 ? (avgReturn / stdDev) * Math.sqrt(252) : 0;
@@ -281,23 +293,54 @@ export default function Trading() {
     const sortedTrades = [...filteredByPeriod]
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime());
 
-    // Calculate cumulative balance
-    let cumBalance = INITIAL_BALANCE;
-    return sortedTrades.map(trade => {
-      // Use saldo_actual if valid, otherwise calculate from realized_pnl
+    if (sortedTrades.length === 0) return [];
+
+    // Group by date and aggregate daily P&L
+    const dailyData: Record<string, { balance: number; pnl: number; dailyPnL: number }> = {};
+    
+    // Get starting balance from all trades (before the filter period)
+    const allSortedTrades = [...trades].sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    );
+    
+    // Find starting balance at beginning of filter period
+    const firstFilteredDate = new Date(sortedTrades[0].date_time);
+    let startingBalance = INITIAL_BALANCE;
+    
+    for (const trade of allSortedTrades) {
+      const tradeDate = new Date(trade.date_time);
+      if (tradeDate >= firstFilteredDate) break;
       if (trade.saldo_actual && trade.saldo_actual > 0) {
-        cumBalance = trade.saldo_actual;
+        startingBalance = trade.saldo_actual;
       } else {
-        cumBalance += (trade.realized_pnl || 0);
+        startingBalance += (trade.realized_pnl || 0);
       }
+    }
+    
+    // Calculate cumulative balance within the period
+    let cumBalance = startingBalance;
+    
+    sortedTrades.forEach(trade => {
+      const dateKey = format(parseISO(trade.date_time), "dd/MM");
+      const pnl = trade.realized_pnl || 0;
+      cumBalance += pnl;
       
-      return {
-        date: format(parseISO(trade.date_time), "dd/MM"),
-        balance: cumBalance,
-        pnl: cumBalance - INITIAL_BALANCE,
-      };
+      if (!dailyData[dateKey]) {
+        dailyData[dateKey] = { balance: cumBalance, pnl: cumBalance - INITIAL_BALANCE, dailyPnL: pnl };
+      } else {
+        dailyData[dateKey].balance = cumBalance;
+        dailyData[dateKey].pnl = cumBalance - INITIAL_BALANCE;
+        dailyData[dateKey].dailyPnL += pnl;
+      }
     });
-  }, [filteredByPeriod]);
+
+    return Object.entries(dailyData).map(([date, data]) => ({
+      date,
+      balance: data.balance,
+      pnl: data.pnl,
+      dailyPnL: data.dailyPnL,
+    }));
+  }, [filteredByPeriod, trades]);
 
   const searchedTrades = useMemo(() => {
     if (!searchTerm) return filteredByPeriod;
