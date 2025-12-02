@@ -9,51 +9,39 @@ const corsHeaders = {
 interface IBKRTrade {
   tradeID: string;
   symbol: string;
-  assetClass: string;
-  tradeDate: string;
-  buySell: string;
+  dateTime: string;
   quantity: number;
   tradePrice: number;
-  netAmount: number;
   ibCommission: number;
-  currency: string;
-  realizedPL: number | null;
+  fifoPnlRealized: number;
+  buySell: string;
   accountId: string;
 }
 
-// Parse various IBKR date formats to ISO string
+const INITIAL_BALANCE = 508969.87;
+
+// Parse IBKR date format: "20251104;122328" -> ISO string
 function parseIBKRDate(dateStr: string): string {
   if (!dateStr || dateStr.trim() === '') {
     return new Date().toISOString();
   }
 
-  // Try direct parsing first
-  let date = new Date(dateStr);
-  if (!isNaN(date.getTime())) {
-    return date.toISOString();
-  }
-
-  // Handle IBKR format: "20240115;103000" or "20240115" 
-  const cleanDate = dateStr.replace(/[;,]/g, ' ').trim();
-  
-  // Try format: YYYYMMDD or YYYYMMDD HHMMSS
-  const match = cleanDate.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{2})(\d{2})(\d{2}))?/);
+  // Handle IBKR format: "20251104;122328"
+  const match = dateStr.match(/^(\d{4})(\d{2})(\d{2});?(\d{2})(\d{2})(\d{2})?/);
   if (match) {
-    const [, year, month, day, hour = '00', min = '00', sec = '00'] = match;
-    date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+    const [, year, month, day, hour, min, sec = '00'] = match;
+    const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
     if (!isNaN(date.getTime())) {
       return date.toISOString();
     }
   }
 
-  // Try format: YYYY-MM-DD, HH:MM:SS or similar
-  const normalizedDate = cleanDate.replace(/,/g, '').replace(/\s+/g, 'T');
-  date = new Date(normalizedDate);
+  // Try direct parsing
+  const date = new Date(dateStr);
   if (!isNaN(date.getTime())) {
     return date.toISOString();
   }
 
-  // Last resort: return current date
   console.warn(`Could not parse date: ${dateStr}, using current date`);
   return new Date().toISOString();
 }
@@ -62,12 +50,10 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
   console.log(`⏳ Downloading ${reportType} (ID: ${queryId})...`);
   
   try {
-    // Step 1: Request the report
     const requestUrl = `https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.SendRequest?t=${token}&q=${queryId}&v=3`;
     const requestResponse = await fetch(requestUrl);
     const requestText = await requestResponse.text();
     
-    // Parse reference code from XML response
     const refCodeMatch = requestText.match(/<ReferenceCode>(\d+)<\/ReferenceCode>/);
     if (!refCodeMatch) {
       console.error(`Failed to get reference code for ${reportType}:`, requestText);
@@ -77,7 +63,6 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     const referenceCode = refCodeMatch[1];
     console.log(`Got reference code: ${referenceCode}`);
     
-    // Step 2: Wait and fetch the report (IBKR needs time to generate)
     await new Promise(resolve => setTimeout(resolve, 2000));
     
     const getUrl = `https://gdcdyn.interactivebrokers.com/Universal/servlet/FlexStatementService.GetStatement?t=${token}&q=${referenceCode}&v=3`;
@@ -103,9 +88,9 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       return [];
     }
     
-    // Parse trades from XML
+    // Parse only <Trade> elements from XML
     const trades: IBKRTrade[] = [];
-    const tradeMatches = reportXml.matchAll(/<Trade([^>]+)\/>/g);
+    const tradeMatches = reportXml.matchAll(/<Trade\s+([^>]+)\/>/g);
     
     for (const match of tradeMatches) {
       const attrs = match[1];
@@ -120,27 +105,18 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
         return val ? parseFloat(val) : 0;
       };
       
-      // Handle different column names between reports
-      const tradeId = getAttr('tradeID') || getAttr('tradeId');
-      const tradeDate = getAttr('tradeDate') || getAttr('dateTime') || getAttr('date');
-      const price = getNumAttr('tradePrice') || getNumAttr('price');
-      const commission = getNumAttr('ibCommission') || getNumAttr('commission');
-      const amount = getNumAttr('netAmount') || getNumAttr('netCash') || getNumAttr('proceeds');
-      
+      const tradeId = getAttr('tradeID');
       if (tradeId) {
         trades.push({
-          tradeID: tradeId.replace(/\.0$/, ''),
+          tradeID: tradeId,
           symbol: getAttr('symbol'),
-          assetClass: getAttr('assetClass') || getAttr('assetCategory') || 'STK',
-          tradeDate: tradeDate,
-          buySell: getAttr('buySell') || getAttr('side') || 'BUY',
+          dateTime: getAttr('dateTime'),
           quantity: getNumAttr('quantity'),
-          tradePrice: price,
-          netAmount: amount,
-          ibCommission: commission,
-          currency: getAttr('currency'),
-          realizedPL: getNumAttr('realizedPL') || null,
-          accountId: getAttr('accountId') || getAttr('acctId') || 'default',
+          tradePrice: getNumAttr('tradePrice'),
+          ibCommission: getNumAttr('ibCommission'),
+          fifoPnlRealized: getNumAttr('fifoPnlRealized'),
+          buySell: getAttr('buySell'),
+          accountId: getAttr('accountId'),
         });
       }
     }
@@ -170,13 +146,15 @@ serve(async (req) => {
 
     console.log("🚀 Starting IBKR sync...");
 
-    // Download both reports
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     const [historicalTrades, todayTrades] = await Promise.all([
       fetchFlexReport(IBKR_TOKEN, ID_HISTORIA, "Historical Report"),
       fetchFlexReport(IBKR_TOKEN, ID_HOY, "Today's Report"),
     ]);
 
-    // Merge and deduplicate by tradeID
     const allTrades = [...historicalTrades, ...todayTrades];
     const uniqueTrades = new Map<string, IBKRTrade>();
     
@@ -186,36 +164,50 @@ serve(async (req) => {
       }
     }
 
-    const tradesToUpsert = Array.from(uniqueTrades.values());
-    console.log(`⚗️ Total unique trades: ${tradesToUpsert.length}`);
+    const tradesToProcess = Array.from(uniqueTrades.values());
+    console.log(`⚗️ Total unique trades: ${tradesToProcess.length}`);
 
-    if (tradesToUpsert.length === 0) {
+    if (tradesToProcess.length === 0) {
       return new Response(
         JSON.stringify({ success: true, message: "No trades to sync", count: 0 }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Connect to Supabase
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    // Sort trades by dateTime for cumulative calculation
+    tradesToProcess.sort((a, b) => {
+      const dateA = parseIBKRDate(a.dateTime);
+      const dateB = parseIBKRDate(b.dateTime);
+      return dateA.localeCompare(dateB);
+    });
 
-    // Upsert trades (using ib_trade_id as conflict key)
-    const records = tradesToUpsert.map(trade => ({
-      ib_trade_id: trade.tradeID,
-      symbol: trade.symbol,
-      asset_class: trade.assetClass,
-      date_time: parseIBKRDate(trade.tradeDate),
-      side: trade.buySell,
-      quantity: trade.quantity,
-      price: trade.tradePrice,
-      amount: trade.netAmount,
-      commission: trade.ibCommission,
-      currency: trade.currency,
-      realized_pnl: trade.realizedPL,
-      account_id: trade.accountId,
-    }));
+    // Calculate net amount for each trade
+    const calculateNetAmount = (trade: IBKRTrade): number => {
+      const amount = Math.abs(trade.quantity) * trade.tradePrice;
+      return trade.buySell === 'SELL' ? amount : -amount;
+    };
+
+    // Prepare records with cumulative balance
+    let runningBalance = INITIAL_BALANCE;
+    
+    const records = tradesToProcess.map(trade => {
+      runningBalance += trade.fifoPnlRealized || 0;
+      return {
+        ib_trade_id: trade.tradeID,
+        symbol: trade.symbol,
+        asset_class: 'STK',
+        date_time: parseIBKRDate(trade.dateTime),
+        side: trade.buySell,
+        quantity: Math.abs(trade.quantity),
+        price: trade.tradePrice,
+        amount: calculateNetAmount(trade),
+        commission: Math.abs(trade.ibCommission),
+        currency: 'USD',
+        realized_pnl: trade.fifoPnlRealized,
+        account_id: trade.accountId,
+        saldo_actual: runningBalance,
+      };
+    });
 
     const { data, error } = await supabase
       .from('ib_trades')
@@ -233,7 +225,8 @@ serve(async (req) => {
       JSON.stringify({ 
         success: true, 
         message: `Synced ${data?.length || 0} trades`,
-        count: data?.length || 0
+        count: data?.length || 0,
+        lastBalance: runningBalance
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
