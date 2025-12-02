@@ -86,16 +86,16 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     // Log first 500 chars of XML for debugging
     console.log(`📄 XML preview (${reportType}):`, reportXml.substring(0, 500));
     
+    // Check for Trade or TradeConfirm elements
     if (!reportXml.includes("Trade")) {
       console.log(`No trades found in ${reportType}`);
       return [];
     }
     
-    // Parse <Trade> elements - handle both self-closing and with attributes on multiple lines
     const trades: IBKRTrade[] = [];
     
-    // More flexible regex to match Trade elements
-    const tradeRegex = /<Trade\s+([^>]*?)\s*\/>/gs;
+    // Match both <Trade> and <TradeConfirm> elements
+    const tradeRegex = /<(?:Trade|TradeConfirm)\s+([^>]*?)\s*\/>/gs;
     let match;
     
     while ((match = tradeRegex.exec(reportXml)) !== null) {
@@ -113,16 +113,21 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       
       const tradeId = getAttr('tradeID');
       if (tradeId) {
+        // Handle different field names between Trade and TradeConfirm
+        const tradePrice = getNumAttr('tradePrice') || getNumAttr('price');
+        const commission = getNumAttr('ibCommission') || getNumAttr('commission');
+        const pnl = getNumAttr('fifoPnlRealized') || getNumAttr('realizedPL') || 0;
+        
         trades.push({
           tradeID: tradeId,
           symbol: getAttr('symbol'),
           dateTime: getAttr('dateTime'),
           quantity: getNumAttr('quantity'),
-          tradePrice: getNumAttr('tradePrice'),
-          ibCommission: getNumAttr('ibCommission'),
-          fifoPnlRealized: getNumAttr('fifoPnlRealized'),
+          tradePrice: tradePrice,
+          ibCommission: commission,
+          fifoPnlRealized: pnl,
           buySell: getAttr('buySell'),
-          accountId: getAttr('accountId'),
+          accountId: getAttr('accountId') || getAttr('acctId') || 'U22563190',
         });
       }
     }
