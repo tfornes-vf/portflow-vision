@@ -1,1 +1,4 @@
 project_id = "xuoyyyscvjrejiclqaaq"
+
+[functions.sync-ibkr-trades]
+verify_jwt = true
