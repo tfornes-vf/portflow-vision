@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   Table,
   TableBody,
@@ -23,12 +25,16 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent } from "lucide-react";
+import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter } from "date-fns";
+import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter, isBefore, startOfDay, endOfDay, isToday, isYesterday } from "date-fns";
+import { es } from "date-fns/locale";
+import { cn } from "@/lib/utils";
+import { DailyReturnGauge } from "@/components/trading/DailyReturnGauge";
+import { DateRange } from "react-day-picker";
 
-type Period = "1D" | "1W" | "1M" | "YTD" | "ALL";
+type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
 
 interface Trade {
   id: string;
@@ -44,6 +50,7 @@ interface Trade {
   currency: string;
   realized_pnl: number | null;
   account_id: string;
+  saldo_actual?: number;
 }
 
 interface KPIs {
@@ -54,7 +61,11 @@ interface KPIs {
   sharpeRatio: number;
   avgWin: number;
   avgLoss: number;
+  currentBalance: number;
+  returnPercent: number;
 }
+
+const INITIAL_BALANCE = 508969.87;
 
 export default function Trading() {
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -64,6 +75,7 @@ export default function Trading() {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("ALL");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const pageSize = 20;
 
   useEffect(() => {
@@ -121,22 +133,88 @@ export default function Trading() {
     }
   };
 
-  const getFilterDate = (period: Period): Date | null => {
+  const getFilterDates = (period: Period): { start: Date | null; end: Date | null } => {
     const now = new Date();
+    const yesterday = startOfDay(subDays(now, 1));
+    const endOfYesterday = endOfDay(subDays(now, 1));
+    
     switch (period) {
-      case "1D": return subDays(now, 1);
-      case "1W": return subWeeks(now, 1);
-      case "1M": return subMonths(now, 1);
-      case "YTD": return startOfYear(now);
-      case "ALL": return null;
+      case "T": // Today
+        return { start: startOfDay(now), end: endOfDay(now) };
+      case "1D": // Yesterday (last complete day)
+        return { start: yesterday, end: endOfYesterday };
+      case "1W": 
+        return { start: subWeeks(now, 1), end: now };
+      case "1M": 
+        return { start: subMonths(now, 1), end: now };
+      case "YTD": 
+        return { start: startOfYear(now), end: now };
+      case "CUSTOM":
+        return { 
+          start: dateRange?.from || null, 
+          end: dateRange?.to || dateRange?.from || null 
+        };
+      case "ALL": 
+      default:
+        return { start: null, end: null };
     }
   };
 
   const filteredByPeriod = useMemo(() => {
-    const filterDate = getFilterDate(selectedPeriod);
-    if (!filterDate) return trades;
-    return trades.filter(t => isAfter(parseISO(t.date_time), filterDate));
-  }, [trades, selectedPeriod]);
+    const { start, end } = getFilterDates(selectedPeriod);
+    if (!start) return trades;
+    
+    return trades.filter(t => {
+      const tradeDate = parseISO(t.date_time);
+      const afterStart = isAfter(tradeDate, start) || tradeDate.getTime() === start.getTime();
+      const beforeEnd = !end || isBefore(tradeDate, end) || tradeDate.getTime() === end.getTime();
+      return afterStart && beforeEnd;
+    });
+  }, [trades, selectedPeriod, dateRange]);
+
+  // Calculate daily returns for gauge
+  const dailyMetrics = useMemo(() => {
+    const sortedTrades = [...trades].sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    );
+
+    // Group trades by day
+    const tradesByDay: Record<string, Trade[]> = {};
+    sortedTrades.forEach(trade => {
+      const day = format(parseISO(trade.date_time), "yyyy-MM-dd");
+      if (!tradesByDay[day]) tradesByDay[day] = [];
+      tradesByDay[day].push(trade);
+    });
+
+    const days = Object.keys(tradesByDay).sort();
+    const dailyReturns: { date: string; pnl: number; returnPercent: number; startBalance: number }[] = [];
+    
+    let prevBalance = INITIAL_BALANCE;
+    days.forEach(day => {
+      const dayTrades = tradesByDay[day];
+      const dayPnL = dayTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
+      const returnPercent = prevBalance > 0 ? (dayPnL / prevBalance) * 100 : 0;
+      dailyReturns.push({ date: day, pnl: dayPnL, returnPercent, startBalance: prevBalance });
+      prevBalance += dayPnL;
+    });
+
+    // Today's return
+    const today = format(new Date(), "yyyy-MM-dd");
+    const todayData = dailyReturns.find(d => d.date === today);
+    const dailyReturn = todayData?.returnPercent || 0;
+
+    // Yesterday's return (last complete day)
+    const yesterday = format(subDays(new Date(), 1), "yyyy-MM-dd");
+    const yesterdayData = dailyReturns.find(d => d.date === yesterday);
+    const lastCompleteDayReturn = yesterdayData?.returnPercent || 0;
+
+    // Average daily return
+    const avgDailyReturn = dailyReturns.length > 0 
+      ? dailyReturns.reduce((sum, d) => sum + d.returnPercent, 0) / dailyReturns.length 
+      : 0;
+
+    return { dailyReturn, avgDailyReturn, lastCompleteDayReturn };
+  }, [trades]);
 
   const kpis = useMemo((): KPIs => {
     const closedTrades = filteredByPeriod.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
@@ -148,23 +226,27 @@ export default function Trading() {
     const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losses.length) : 0;
 
-    // Calculate max drawdown
-    let peak = 0;
+    // Get current balance from latest trade
+    const latestTrade = trades.length > 0 ? trades[0] : null;
+    const currentBalance = latestTrade?.saldo_actual || INITIAL_BALANCE;
+    const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
+
+    // Calculate max drawdown using saldo_actual
+    let peak = INITIAL_BALANCE;
     let maxDrawdown = 0;
-    let cumulative = 0;
-    const sortedTrades = [...closedTrades].sort((a, b) => 
+    const sortedTrades = [...trades].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
     for (const trade of sortedTrades) {
-      cumulative += trade.realized_pnl || 0;
-      if (cumulative > peak) peak = cumulative;
-      const drawdown = peak - cumulative;
+      const balance = trade.saldo_actual || INITIAL_BALANCE;
+      if (balance > peak) peak = balance;
+      const drawdown = peak - balance;
       if (drawdown > maxDrawdown) maxDrawdown = drawdown;
     }
 
-    // Simple Sharpe approximation (daily returns std)
-    const returns = sortedTrades.map(t => t.realized_pnl || 0);
+    // Sharpe ratio calculation
+    const returns = closedTrades.map(t => t.realized_pnl || 0);
     const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
     const variance = returns.length > 1 
       ? returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / (returns.length - 1)
@@ -180,23 +262,20 @@ export default function Trading() {
       sharpeRatio,
       avgWin,
       avgLoss,
+      currentBalance,
+      returnPercent,
     };
-  }, [filteredByPeriod]);
+  }, [filteredByPeriod, trades]);
 
   const chartData = useMemo(() => {
     const sortedTrades = [...filteredByPeriod]
-      .filter(t => t.realized_pnl !== null)
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime());
 
-    let cumulative = 0;
-    return sortedTrades.map(trade => {
-      cumulative += trade.realized_pnl || 0;
-      return {
-        date: format(parseISO(trade.date_time), "dd/MM"),
-        pnl: cumulative,
-        daily: trade.realized_pnl || 0,
-      };
-    });
+    return sortedTrades.map(trade => ({
+      date: format(parseISO(trade.date_time), "dd/MM"),
+      balance: trade.saldo_actual || INITIAL_BALANCE,
+      pnl: (trade.saldo_actual || INITIAL_BALANCE) - INITIAL_BALANCE,
+    }));
   }, [filteredByPeriod]);
 
   const searchedTrades = useMemo(() => {
@@ -216,33 +295,44 @@ export default function Trading() {
 
   const totalPages = Math.ceil(searchedTrades.length / pageSize);
 
-  const strategyPerformance = useMemo(() => {
-    const byAssetClass: Record<string, { pnl: number; trades: number; wins: number }> = {};
+  // Performance by symbol
+  const symbolPerformance = useMemo(() => {
+    const bySymbol: Record<string, { pnl: number; trades: number; wins: number }> = {};
     
     filteredByPeriod.forEach(trade => {
-      const key = trade.asset_class || "Unknown";
-      if (!byAssetClass[key]) {
-        byAssetClass[key] = { pnl: 0, trades: 0, wins: 0 };
+      const key = trade.symbol;
+      if (!bySymbol[key]) {
+        bySymbol[key] = { pnl: 0, trades: 0, wins: 0 };
       }
-      byAssetClass[key].trades++;
+      bySymbol[key].trades++;
       if (trade.realized_pnl) {
-        byAssetClass[key].pnl += trade.realized_pnl;
-        if (trade.realized_pnl > 0) byAssetClass[key].wins++;
+        bySymbol[key].pnl += trade.realized_pnl;
+        if (trade.realized_pnl > 0) bySymbol[key].wins++;
       }
     });
 
-    return Object.entries(byAssetClass).map(([name, data]) => ({
-      name,
-      pnl: data.pnl,
-      trades: data.trades,
-      winRate: data.trades > 0 ? (data.wins / data.trades) * 100 : 0,
-    }));
+    return Object.entries(bySymbol)
+      .map(([name, data]) => ({
+        name,
+        pnl: data.pnl,
+        trades: data.trades,
+        winRate: data.trades > 0 ? (data.wins / data.trades) * 100 : 0,
+      }))
+      .sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl))
+      .slice(0, 8);
   }, [filteredByPeriod]);
 
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD" }).format(value);
 
-  const periods: Period[] = ["1D", "1W", "1M", "YTD", "ALL"];
+  const periods: { key: Period; label: string }[] = [
+    { key: "T", label: "T" },
+    { key: "1D", label: "1D" },
+    { key: "1W", label: "1W" },
+    { key: "1M", label: "1M" },
+    { key: "YTD", label: "YTD" },
+    { key: "ALL", label: "ALL" },
+  ];
 
   if (loading) {
     return (
@@ -277,95 +367,154 @@ export default function Trading() {
           </Button>
         </div>
 
-        {/* Period Filter */}
-        <div className="flex gap-2">
+        {/* Period Filter with Date Picker */}
+        <div className="flex flex-wrap gap-2 items-center">
           {periods.map((period) => (
             <Button
-              key={period}
-              variant={selectedPeriod === period ? "default" : "outline"}
+              key={period.key}
+              variant={selectedPeriod === period.key ? "default" : "outline"}
               size="sm"
-              onClick={() => setSelectedPeriod(period)}
+              onClick={() => {
+                setSelectedPeriod(period.key);
+                if (period.key !== "CUSTOM") setDateRange(undefined);
+              }}
             >
-              {period}
+              {period.label}
             </Button>
           ))}
+          
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant={selectedPeriod === "CUSTOM" ? "default" : "outline"}
+                size="sm"
+                className={cn("gap-2", selectedPeriod === "CUSTOM" && "bg-primary")}
+              >
+                <CalendarIcon className="h-4 w-4" />
+                {dateRange?.from ? (
+                  dateRange.to ? (
+                    `${format(dateRange.from, "dd/MM")} - ${format(dateRange.to, "dd/MM")}`
+                  ) : (
+                    format(dateRange.from, "dd/MM/yy")
+                  )
+                ) : (
+                  "Personalizar"
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar
+                mode="range"
+                selected={dateRange}
+                onSelect={(range) => {
+                  setDateRange(range);
+                  if (range?.from) setSelectedPeriod("CUSTOM");
+                }}
+                locale={es}
+                className="pointer-events-auto"
+              />
+            </PopoverContent>
+          </Popover>
         </div>
 
-        {/* KPI Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">P&L Total</span>
-              </div>
-              <p className={`text-xl font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {formatCurrency(kpis.totalPnL)}
+        {/* Main Metrics Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          {/* Current Balance Card */}
+          <Card className="lg:col-span-1">
+            <CardContent className="pt-6">
+              <p className="text-sm text-muted-foreground mb-1">Saldo Actual</p>
+              <p className="text-3xl font-bold text-foreground">{formatCurrency(kpis.currentBalance)}</p>
+              <p className={`text-sm mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% desde inicio
               </p>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Trades</span>
-              </div>
-              <p className="text-xl font-bold">{kpis.totalTrades}</p>
-            </CardContent>
-          </Card>
+          {/* Daily Return Gauge */}
+          <div className="lg:col-span-1">
+            <DailyReturnGauge 
+              dailyReturn={dailyMetrics.dailyReturn}
+              avgDailyReturn={dailyMetrics.avgDailyReturn}
+              lastCompleteDayReturn={dailyMetrics.lastCompleteDayReturn}
+            />
+          </div>
 
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Win Rate</span>
-              </div>
-              <p className="text-xl font-bold">{kpis.winRate.toFixed(1)}%</p>
-            </CardContent>
-          </Card>
+          {/* KPI Cards */}
+          <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">P&L Período</span>
+                </div>
+                <p className={`text-lg font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  {formatCurrency(kpis.totalPnL)}
+                </p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2">
-                <TrendingDown className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Max Drawdown</span>
-              </div>
-              <p className="text-xl font-bold text-red-500">
-                {formatCurrency(kpis.maxDrawdown)}
-              </p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Trades</span>
+                </div>
+                <p className="text-lg font-bold">{kpis.totalTrades}</p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Sharpe Ratio</span>
-              </div>
-              <p className="text-xl font-bold">{kpis.sharpeRatio.toFixed(2)}</p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <Target className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Win Rate</span>
+                </div>
+                <p className="text-lg font-bold">{kpis.winRate.toFixed(1)}%</p>
+              </CardContent>
+            </Card>
 
-          <Card>
-            <CardContent className="pt-4">
-              <div className="flex items-center gap-2">
-                <Percent className="h-4 w-4 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">Avg Win/Loss</span>
-              </div>
-              <p className="text-sm font-medium">
-                <span className="text-green-500">{formatCurrency(kpis.avgWin)}</span>
-                {" / "}
-                <span className="text-red-500">{formatCurrency(kpis.avgLoss)}</span>
-              </p>
-            </CardContent>
-          </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <TrendingDown className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Max DD</span>
+                </div>
+                <p className="text-lg font-bold text-red-500">
+                  {formatCurrency(kpis.maxDrawdown)}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Sharpe</span>
+                </div>
+                <p className="text-lg font-bold">{kpis.sharpeRatio.toFixed(2)}</p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="pt-4">
+                <div className="flex items-center gap-2">
+                  <Percent className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">Avg W/L</span>
+                </div>
+                <p className="text-xs font-medium">
+                  <span className="text-green-500">{formatCurrency(kpis.avgWin)}</span>
+                  <span className="text-muted-foreground"> / </span>
+                  <span className="text-red-500">{formatCurrency(kpis.avgLoss)}</span>
+                </p>
+              </CardContent>
+            </Card>
+          </div>
         </div>
 
         {/* Performance Chart */}
         <Card>
           <CardHeader>
-            <CardTitle>Rendimiento Acumulado</CardTitle>
+            <CardTitle>Rendimiento Acumulado (Saldo)</CardTitle>
           </CardHeader>
           <CardContent>
             {chartData.length > 0 ? (
@@ -381,6 +530,7 @@ export default function Trading() {
                     tick={{ fontSize: 12 }}
                     tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
                     className="text-muted-foreground"
+                    domain={['auto', 'auto']}
                   />
                   <Tooltip
                     contentStyle={{
@@ -388,12 +538,12 @@ export default function Trading() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number) => [formatCurrency(value), "P&L Acumulado"]}
+                    formatter={(value: number) => [formatCurrency(value), "Saldo"]}
                   />
-                  <ReferenceLine y={0} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+                  <ReferenceLine y={INITIAL_BALANCE} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
                   <Line
                     type="monotone"
-                    dataKey="pnl"
+                    dataKey="balance"
                     stroke="hsl(var(--primary))"
                     strokeWidth={2}
                     dot={false}
@@ -408,29 +558,29 @@ export default function Trading() {
           </CardContent>
         </Card>
 
-        {/* Strategy Performance */}
+        {/* Symbol Performance */}
         <Card>
           <CardHeader>
-            <CardTitle>Rendimiento por Asset Class</CardTitle>
+            <CardTitle>Rendimiento por Símbolo</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {strategyPerformance.map((strategy) => (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {symbolPerformance.map((symbol) => (
                 <div
-                  key={strategy.name}
+                  key={symbol.name}
                   className="p-4 rounded-lg border bg-card"
                 >
                   <div className="flex items-center justify-between mb-2">
-                    <Badge variant="outline">{strategy.name}</Badge>
+                    <Badge variant="outline" className="font-mono">{symbol.name}</Badge>
                     <span className="text-xs text-muted-foreground">
-                      {strategy.trades} trades
+                      {symbol.trades} trades
                     </span>
                   </div>
-                  <p className={`text-lg font-bold ${strategy.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {formatCurrency(strategy.pnl)}
+                  <p className={`text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {formatCurrency(symbol.pnl)}
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Win Rate: {strategy.winRate.toFixed(1)}%
+                    Win Rate: {symbol.winRate.toFixed(1)}%
                   </p>
                 </div>
               ))}
@@ -464,13 +614,12 @@ export default function Trading() {
                   <TableRow>
                     <TableHead>Fecha</TableHead>
                     <TableHead>Símbolo</TableHead>
-                    <TableHead>Clase</TableHead>
                     <TableHead>Acción</TableHead>
                     <TableHead className="text-right">Cantidad</TableHead>
                     <TableHead className="text-right">Precio</TableHead>
-                    <TableHead className="text-right">Monto</TableHead>
                     <TableHead className="text-right">P&L</TableHead>
                     <TableHead className="text-right">Comisión</TableHead>
+                    <TableHead className="text-right">Saldo</TableHead>
                     <TableHead>ID</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -483,32 +632,29 @@ export default function Trading() {
                         </TableCell>
                         <TableCell className="font-medium">{trade.symbol}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary">{trade.asset_class}</Badge>
-                        </TableCell>
-                        <TableCell>
                           <Badge variant={trade.side === "BUY" ? "default" : "destructive"}>
                             {trade.side}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-right">{trade.quantity}</TableCell>
                         <TableCell className="text-right">${trade.price.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{formatCurrency(trade.amount)}</TableCell>
-                        <TableCell className={`text-right font-medium ${
-                          (trade.realized_pnl || 0) >= 0 ? "text-green-500" : "text-red-500"
-                        }`}>
-                          {trade.realized_pnl ? formatCurrency(trade.realized_pnl) : "-"}
+                        <TableCell className={`text-right font-medium ${(trade.realized_pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                          {formatCurrency(trade.realized_pnl || 0)}
                         </TableCell>
                         <TableCell className="text-right text-muted-foreground">
                           ${trade.commission.toFixed(2)}
                         </TableCell>
-                        <TableCell className="text-xs text-muted-foreground">
-                          {trade.ib_trade_id.slice(-8)}
+                        <TableCell className="text-right">
+                          {formatCurrency(trade.saldo_actual || 0)}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground font-mono">
+                          {trade.ib_trade_id}
                         </TableCell>
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
                         No se encontraron trades
                       </TableCell>
                     </TableRow>

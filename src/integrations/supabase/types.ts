@@ -229,6 +229,7 @@ export type Database = {
           price: number
           quantity: number
           realized_pnl: number | null
+          saldo_actual: number | null
           side: string
           symbol: string
           updated_at: string
@@ -246,6 +247,7 @@ export type Database = {
           price: number
           quantity: number
           realized_pnl?: number | null
+          saldo_actual?: number | null
           side: string
           symbol: string
           updated_at?: string
@@ -263,6 +265,7 @@ export type Database = {
           price?: number
           quantity?: number
           realized_pnl?: number | null
+          saldo_actual?: number | null
           side?: string
           symbol?: string
           updated_at?: string
