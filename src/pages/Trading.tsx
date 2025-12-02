@@ -217,36 +217,46 @@ export default function Trading() {
   }, [trades]);
 
   const kpis = useMemo((): KPIs => {
-    const closedTrades = filteredByPeriod.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
-    const wins = closedTrades.filter(t => (t.realized_pnl || 0) > 0);
-    const losses = closedTrades.filter(t => (t.realized_pnl || 0) < 0);
+    // Filter trades with realized P&L
+    const tradesWithPnL = filteredByPeriod.filter(t => t.realized_pnl !== null);
+    const wins = tradesWithPnL.filter(t => (t.realized_pnl || 0) > 0);
+    const losses = tradesWithPnL.filter(t => (t.realized_pnl || 0) < 0);
 
-    const totalPnL = closedTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
-    const winRate = closedTrades.length > 0 ? (wins.length / closedTrades.length) * 100 : 0;
+    const totalPnL = tradesWithPnL.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
+    const winRate = tradesWithPnL.length > 0 ? (wins.length / tradesWithPnL.length) * 100 : 0;
     const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losses.length) : 0;
 
-    // Get current balance from latest trade
-    const latestTrade = trades.length > 0 ? trades[0] : null;
-    const currentBalance = latestTrade?.saldo_actual || INITIAL_BALANCE;
-    const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
-
-    // Calculate max drawdown using saldo_actual
-    let peak = INITIAL_BALANCE;
-    let maxDrawdown = 0;
-    const sortedTrades = [...trades].sort((a, b) => 
+    // Calculate cumulative balance from all trades
+    const sortedAllTrades = [...trades].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
-    for (const trade of sortedTrades) {
-      const balance = trade.saldo_actual || INITIAL_BALANCE;
-      if (balance > peak) peak = balance;
-      const drawdown = peak - balance;
+    // If saldo_actual exists and is valid, use it; otherwise calculate from realized_pnl
+    let currentBalance = INITIAL_BALANCE;
+    let peak = INITIAL_BALANCE;
+    let maxDrawdown = 0;
+    const balanceHistory: number[] = [];
+    
+    for (const trade of sortedAllTrades) {
+      // Use saldo_actual if valid, otherwise accumulate realized_pnl
+      if (trade.saldo_actual && trade.saldo_actual > 0) {
+        currentBalance = trade.saldo_actual;
+      } else {
+        currentBalance += (trade.realized_pnl || 0);
+      }
+      
+      balanceHistory.push(currentBalance);
+      
+      if (currentBalance > peak) peak = currentBalance;
+      const drawdown = peak - currentBalance;
       if (drawdown > maxDrawdown) maxDrawdown = drawdown;
     }
+    
+    const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
 
-    // Sharpe ratio calculation
-    const returns = closedTrades.map(t => t.realized_pnl || 0);
+    // Sharpe ratio calculation based on daily returns
+    const returns = tradesWithPnL.map(t => t.realized_pnl || 0);
     const avgReturn = returns.length > 0 ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
     const variance = returns.length > 1 
       ? returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / (returns.length - 1)
@@ -271,11 +281,22 @@ export default function Trading() {
     const sortedTrades = [...filteredByPeriod]
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime());
 
-    return sortedTrades.map(trade => ({
-      date: format(parseISO(trade.date_time), "dd/MM"),
-      balance: trade.saldo_actual || INITIAL_BALANCE,
-      pnl: (trade.saldo_actual || INITIAL_BALANCE) - INITIAL_BALANCE,
-    }));
+    // Calculate cumulative balance
+    let cumBalance = INITIAL_BALANCE;
+    return sortedTrades.map(trade => {
+      // Use saldo_actual if valid, otherwise calculate from realized_pnl
+      if (trade.saldo_actual && trade.saldo_actual > 0) {
+        cumBalance = trade.saldo_actual;
+      } else {
+        cumBalance += (trade.realized_pnl || 0);
+      }
+      
+      return {
+        date: format(parseISO(trade.date_time), "dd/MM"),
+        balance: cumBalance,
+        pnl: cumBalance - INITIAL_BALANCE,
+      };
+    });
   }, [filteredByPeriod]);
 
   const searchedTrades = useMemo(() => {
