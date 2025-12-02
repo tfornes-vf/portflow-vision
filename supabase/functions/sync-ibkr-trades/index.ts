@@ -188,7 +188,7 @@ serve(async (req) => {
       );
     }
 
-    // Sort trades by dateTime for cumulative calculation
+    // Sort trades by dateTime for cumulative calculation (oldest first)
     tradesToProcess.sort((a, b) => {
       const dateA = parseIBKRDate(a.dateTime);
       const dateB = parseIBKRDate(b.dateTime);
@@ -201,8 +201,15 @@ serve(async (req) => {
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    // Prepare records with cumulative balance
-    let runningBalance = INITIAL_BALANCE;
+    // Calculate total P&L to find the real initial balance
+    // INITIAL_BALANCE is the FINAL balance, so we need to work backwards
+    const totalPnL = tradesToProcess.reduce((sum, trade) => sum + (trade.fifoPnlRealized || 0), 0);
+    const realInitialBalance = INITIAL_BALANCE - totalPnL;
+    
+    console.log(`📊 Total P&L: ${totalPnL}, Real initial balance: ${realInitialBalance}`);
+
+    // Prepare records with cumulative balance starting from real initial
+    let runningBalance = realInitialBalance;
     
     const records = tradesToProcess.map(trade => {
       runningBalance += trade.fifoPnlRealized || 0;
