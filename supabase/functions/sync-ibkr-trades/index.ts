@@ -21,6 +21,43 @@ interface IBKRTrade {
   accountId: string;
 }
 
+// Parse various IBKR date formats to ISO string
+function parseIBKRDate(dateStr: string): string {
+  if (!dateStr || dateStr.trim() === '') {
+    return new Date().toISOString();
+  }
+
+  // Try direct parsing first
+  let date = new Date(dateStr);
+  if (!isNaN(date.getTime())) {
+    return date.toISOString();
+  }
+
+  // Handle IBKR format: "20240115;103000" or "20240115" 
+  const cleanDate = dateStr.replace(/[;,]/g, ' ').trim();
+  
+  // Try format: YYYYMMDD or YYYYMMDD HHMMSS
+  const match = cleanDate.match(/^(\d{4})(\d{2})(\d{2})(?:\s*(\d{2})(\d{2})(\d{2}))?/);
+  if (match) {
+    const [, year, month, day, hour = '00', min = '00', sec = '00'] = match;
+    date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+
+  // Try format: YYYY-MM-DD, HH:MM:SS or similar
+  const normalizedDate = cleanDate.replace(/,/g, '').replace(/\s+/g, 'T');
+  date = new Date(normalizedDate);
+  if (!isNaN(date.getTime())) {
+    return date.toISOString();
+  }
+
+  // Last resort: return current date
+  console.warn(`Could not parse date: ${dateStr}, using current date`);
+  return new Date().toISOString();
+}
+
 async function fetchFlexReport(token: string, queryId: string, reportType: string): Promise<IBKRTrade[]> {
   console.log(`⏳ Downloading ${reportType} (ID: ${queryId})...`);
   
@@ -169,7 +206,7 @@ serve(async (req) => {
       ib_trade_id: trade.tradeID,
       symbol: trade.symbol,
       asset_class: trade.assetClass,
-      date_time: trade.tradeDate ? new Date(trade.tradeDate).toISOString() : new Date().toISOString(),
+      date_time: parseIBKRDate(trade.tradeDate),
       side: trade.buySell,
       quantity: trade.quantity,
       price: trade.tradePrice,
