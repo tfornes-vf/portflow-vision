@@ -59,10 +59,10 @@ export function DailyReturnGauge({ dailyReturn, avgDailyReturn, lastCompleteDayR
           
           {/* Center Value */}
           <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ top: '20%' }}>
-            <p className={`text-3xl font-bold ${dailyReturn >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {formatPercent(dailyReturn)}
+            <p className={`text-xl font-bold ${lastCompleteDayReturn >= 0 ? "text-green-500" : "text-red-500"}`}>
+              {formatPercent(lastCompleteDayReturn)}
             </p>
-            <p className="text-xs text-muted-foreground mt-1">Hoy</p>
+            <p className="text-[10px] text-muted-foreground mt-1">Último día completo</p>
           </div>
         </div>
         
