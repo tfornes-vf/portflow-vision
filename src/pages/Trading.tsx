@@ -71,7 +71,7 @@ export default function Trading() {
   const [trades, setTrades] = useState<Trade[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [cooldown, setCooldown] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("ALL");
@@ -81,6 +81,15 @@ export default function Trading() {
   useEffect(() => {
     fetchTrades();
   }, []);
+
+  // Countdown timer for cooldown
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown(prev => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   const fetchTrades = async () => {
     try {
@@ -104,10 +113,9 @@ export default function Trading() {
   };
 
   const syncTrades = async () => {
-    if (cooldown) return;
+    if (cooldown > 0) return;
 
     setSyncing(true);
-    setCooldown(true);
 
     try {
       const { data, error } = await supabase.functions.invoke("sync-ibkr-trades");
@@ -129,7 +137,7 @@ export default function Trading() {
       });
     } finally {
       setSyncing(false);
-      setTimeout(() => setCooldown(false), 10000);
+      setCooldown(10);
     }
   };
 
@@ -424,11 +432,11 @@ export default function Trading() {
           </div>
           <Button 
             onClick={syncTrades} 
-            disabled={syncing || cooldown}
+            disabled={syncing || cooldown > 0}
             variant="outline"
           >
             <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Actualizando..." : cooldown ? "Espera 10s" : "Refresh Trades"}
+            {syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh Trades"}
           </Button>
         </div>
 
