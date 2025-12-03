@@ -206,15 +206,11 @@ serve(async (req) => {
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    // Calculate total P&L to find the real initial balance
-    // INITIAL_BALANCE is the FINAL balance, so we need to work backwards
-    const totalPnL = tradesToProcess.reduce((sum, trade) => sum + (trade.fifoPnlRealized || 0), 0);
-    const realInitialBalance = INITIAL_BALANCE - totalPnL;
-    
-    console.log(`📊 Total P&L: ${totalPnL}, Real initial balance: ${realInitialBalance}`);
+    // INITIAL_BALANCE is the STARTING balance, add P&L as we go
+    console.log(`📊 Using initial balance: ${INITIAL_BALANCE}`);
 
-    // Prepare records with cumulative balance starting from real initial
-    let runningBalance = realInitialBalance;
+    // Prepare records with cumulative balance starting from initial
+    let runningBalance = INITIAL_BALANCE;
     
     const records = tradesToProcess.map(trade => {
       runningBalance += trade.fifoPnlRealized || 0;

@@ -342,10 +342,12 @@ export default function Trading() {
     }));
   }, [filteredByPeriod, trades]);
 
+  // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
-    if (!searchTerm) return filteredByPeriod;
+    const tradesWithPnL = filteredByPeriod.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    if (!searchTerm) return tradesWithPnL;
     const term = searchTerm.toLowerCase();
-    return filteredByPeriod.filter(t =>
+    return tradesWithPnL.filter(t =>
       t.symbol.toLowerCase().includes(term) ||
       t.ib_trade_id.includes(term) ||
       t.asset_class.toLowerCase().includes(term)
