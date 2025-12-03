@@ -172,8 +172,13 @@ serve(async (req) => {
     const allTrades = [...historicalTrades, ...todayTrades];
     const uniqueTrades = new Map<string, IBKRTrade>();
     
+    // Prefer trades with P&L data when deduplicating
     for (const trade of allTrades) {
-      if (!uniqueTrades.has(trade.tradeID)) {
+      const existing = uniqueTrades.get(trade.tradeID);
+      if (!existing) {
+        uniqueTrades.set(trade.tradeID, trade);
+      } else if (trade.fifoPnlRealized !== 0 && existing.fifoPnlRealized === 0) {
+        // Replace with the one that has P&L data
         uniqueTrades.set(trade.tradeID, trade);
       }
     }
