@@ -8,19 +8,42 @@ interface DailyReturnGaugeProps {
   lastCompleteDayReturn: number;
 }
 
+const DAILY_TARGET = 0.12; // Objetivo diario: 0.12%
+
 export function DailyReturnGauge({ dailyReturn, avgDailyReturn, lastCompleteDayReturn }: DailyReturnGaugeProps) {
   const gaugeData = useMemo(() => {
-    // Normalize the value for gauge display (-10% to +10% range)
-    const normalizedValue = Math.max(-10, Math.min(10, avgDailyReturn));
-    const percentage = ((normalizedValue + 10) / 20) * 100;
+    // Range: -0.12% to +0.36%, where 0.12% (target) is at center (50%)
+    // This gives a total range of 0.48%
+    const minValue = -DAILY_TARGET; // -0.12%
+    const maxValue = DAILY_TARGET * 3; // +0.36%
+    const range = maxValue - minValue; // 0.48%
+    
+    // Clamp and normalize lastCompleteDayReturn to 0-100%
+    const clampedValue = Math.max(minValue, Math.min(maxValue, lastCompleteDayReturn));
+    const percentage = ((clampedValue - minValue) / range) * 100;
+    
+    // Color based on whether we hit the target
+    const hitTarget = lastCompleteDayReturn >= DAILY_TARGET;
+    const isPositive = lastCompleteDayReturn >= 0;
+    
+    let fillColor: string;
+    if (hitTarget) {
+      fillColor = "hsl(142, 76%, 36%)"; // Green - exceeded target
+    } else if (isPositive) {
+      fillColor = "hsl(48, 96%, 53%)"; // Yellow - positive but below target
+    } else {
+      fillColor = "hsl(var(--destructive))"; // Red - negative
+    }
     
     return [
-      { value: percentage, color: avgDailyReturn >= 0 ? "hsl(var(--chart-2))" : "hsl(var(--destructive))" },
+      { value: percentage, color: fillColor },
       { value: 100 - percentage, color: "hsl(var(--muted))" },
     ];
-  }, [avgDailyReturn]);
+  }, [lastCompleteDayReturn]);
 
   const formatPercent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
+  
+  const hitTarget = lastCompleteDayReturn >= DAILY_TARGET;
 
   return (
     <Card className="relative">
@@ -28,9 +51,9 @@ export function DailyReturnGauge({ dailyReturn, avgDailyReturn, lastCompleteDayR
         <div className="flex items-center justify-between">
           <CardTitle className="text-base">Rentabilidad Diaria</CardTitle>
           <div className="text-right">
-            <p className="text-xs text-muted-foreground">Último día completo</p>
-            <p className={`text-sm font-bold ${lastCompleteDayReturn >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {formatPercent(lastCompleteDayReturn)}
+            <p className="text-xs text-muted-foreground">Objetivo diario</p>
+            <p className="text-sm font-bold text-muted-foreground">
+              {formatPercent(DAILY_TARGET)}
             </p>
           </div>
         </div>
@@ -57,12 +80,23 @@ export function DailyReturnGauge({ dailyReturn, avgDailyReturn, lastCompleteDayR
             </PieChart>
           </ResponsiveContainer>
           
+          {/* Target marker at center top */}
+          <div className="absolute left-1/2 -translate-x-1/2" style={{ top: '12%' }}>
+            <div className="flex flex-col items-center">
+              <div className="w-0.5 h-3 bg-foreground/50" />
+              <p className="text-[9px] text-muted-foreground mt-0.5">{formatPercent(DAILY_TARGET)}</p>
+            </div>
+          </div>
+          
           {/* Center Value */}
           <div className="absolute inset-0 flex flex-col items-center justify-center" style={{ top: '20%' }}>
-            <p className={`text-xl font-bold ${lastCompleteDayReturn >= 0 ? "text-green-500" : "text-red-500"}`}>
+            <p className={`text-xl font-bold ${hitTarget ? "text-green-500" : lastCompleteDayReturn >= 0 ? "text-yellow-500" : "text-red-500"}`}>
               {formatPercent(lastCompleteDayReturn)}
             </p>
             <p className="text-[10px] text-muted-foreground mt-1">Último día completo</p>
+            {hitTarget && (
+              <p className="text-[9px] text-green-500 mt-0.5">✓ Objetivo superado</p>
+            )}
           </div>
         </div>
         
