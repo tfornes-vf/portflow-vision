@@ -118,7 +118,7 @@ export function AppSidebar() {
 
   return (
     <Sidebar className={isCollapsed ? "w-14" : "w-64"}>
-      <SidebarHeader className="border-b border-sidebar-border p-4">
+      <SidebarHeader className="p-4">
         {!isCollapsed && (
           <h1 className="text-xl font-bold text-sidebar-foreground">
             Alphafolio
