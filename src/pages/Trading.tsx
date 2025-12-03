@@ -228,15 +228,14 @@ export default function Trading() {
     const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losses.length) : 0;
 
-    // Get current balance from latest trade (all trades, not filtered)
-    const sortedAllTrades = [...trades].sort((a, b) => 
+    // Get current balance from latest trade with P&L (all trades, not filtered)
+    const tradesWithPnL = trades.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    const sortedTradesWithPnL = [...tradesWithPnL].sort((a, b) => 
       new Date(b.date_time).getTime() - new Date(a.date_time).getTime() // descending
     );
     
-    const latestTrade = sortedAllTrades[0];
-    const currentBalance = latestTrade?.saldo_actual && latestTrade.saldo_actual > 0 
-      ? latestTrade.saldo_actual 
-      : trades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) + INITIAL_BALANCE;
+    const latestTradeWithPnL = sortedTradesWithPnL[0];
+    const currentBalance = latestTradeWithPnL?.saldo_actual ?? INITIAL_BALANCE;
     
     const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
 
