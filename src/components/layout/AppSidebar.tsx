@@ -1,6 +1,6 @@
-import { Home, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon, LineChart, Shield, LogOut } from "lucide-react";
+import { Home, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon, LineChart, Shield, LogOut, Camera, Palette } from "lucide-react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { EntityManagementModal } from "@/components/modals/EntityManagementModal";
 import { EntitySettingsDialog } from "@/components/modals/EntitySettingsDialog";
@@ -35,7 +35,8 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface Entity {
   id: string;
@@ -43,13 +44,25 @@ interface Entity {
   type_id: string | null;
 }
 
+// Available avatar colors
+const AVATAR_COLORS = [
+  { name: "Rojo", value: "bg-red-500" },
+  { name: "Rosa", value: "bg-pink-500" },
+  { name: "Púrpura", value: "bg-purple-500" },
+  { name: "Índigo", value: "bg-indigo-500" },
+  { name: "Azul", value: "bg-blue-500" },
+  { name: "Cian", value: "bg-cyan-500" },
+  { name: "Verde", value: "bg-teal-500" },
+  { name: "Lima", value: "bg-green-500" },
+  { name: "Amarillo", value: "bg-yellow-500" },
+  { name: "Naranja", value: "bg-orange-500" },
+  { name: "Gris", value: "bg-gray-500" },
+  { name: "Slate", value: "bg-slate-600" },
+];
+
 // Gmail-style avatar colors based on first letter
-const getAvatarColor = (name: string): string => {
-  const colors = [
-    "bg-red-500", "bg-pink-500", "bg-purple-500", "bg-indigo-500",
-    "bg-blue-500", "bg-cyan-500", "bg-teal-500", "bg-green-500",
-    "bg-lime-500", "bg-yellow-500", "bg-orange-500", "bg-amber-500"
-  ];
+const getDefaultAvatarColor = (name: string): string => {
+  const colors = AVATAR_COLORS.map(c => c.value);
   const charCode = (name || "U").toUpperCase().charCodeAt(0);
   return colors[charCode % colors.length];
 };
@@ -61,6 +74,8 @@ const getInitial = (name: string): string => {
 export function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityModalOpen, setEntityModalOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
@@ -70,10 +85,15 @@ export function AppSidebar() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [userName, setUserName] = useState("");
   const [userId, setUserId] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [avatarColor, setAvatarColor] = useState<string | null>(null);
   
   // Profile edit state
   const [profileDialogOpen, setProfileDialogOpen] = useState(false);
   const [editingName, setEditingName] = useState("");
+  const [editingColor, setEditingColor] = useState("");
+  const [previewAvatarUrl, setPreviewAvatarUrl] = useState<string | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
@@ -88,15 +108,17 @@ export function AppSidebar() {
 
       setUserId(user.id);
 
-      // Fetch user profile for name
+      // Fetch user profile
       const { data: profile } = await supabase
         .from("profiles")
-        .select("full_name")
+        .select("full_name, avatar_url, avatar_color")
         .eq("user_id", user.id)
         .single();
 
-      if (profile?.full_name) {
-        setUserName(profile.full_name);
+      if (profile) {
+        setUserName(profile.full_name || user.email?.split("@")[0] || "Usuario");
+        setAvatarUrl(profile.avatar_url);
+        setAvatarColor(profile.avatar_color);
       } else {
         setUserName(user.email?.split("@")[0] || "Usuario");
       }
@@ -169,29 +191,99 @@ export function AppSidebar() {
 
   const openProfileDialog = () => {
     setEditingName(userName);
+    setEditingColor(avatarColor || getDefaultAvatarColor(userName));
+    setPreviewAvatarUrl(avatarUrl);
     setProfileDialogOpen(true);
   };
 
-  const saveProfileName = async () => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !userId) return;
+
+    // Validate file type
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Error",
+        description: "Solo se permiten archivos de imagen",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "Error",
+        description: "La imagen no puede superar 2MB",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadingAvatar(true);
+    try {
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${userId}/avatar.${fileExt}`;
+
+      // Delete old avatar if exists
+      await supabase.storage.from("avatars").remove([`${userId}/avatar.png`, `${userId}/avatar.jpg`, `${userId}/avatar.jpeg`, `${userId}/avatar.webp`]);
+
+      // Upload new avatar
+      const { error: uploadError } = await supabase.storage
+        .from("avatars")
+        .upload(fileName, file, { upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      // Get public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(fileName);
+
+      setPreviewAvatarUrl(publicUrl + "?t=" + Date.now());
+      toast({ title: "Imagen subida correctamente" });
+    } catch (error) {
+      console.error("Error uploading avatar:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo subir la imagen",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    setPreviewAvatarUrl(null);
+  };
+
+  const saveProfileChanges = async () => {
     if (!editingName.trim() || !userId) return;
     
     setSavingProfile(true);
     try {
       const { error } = await supabase
         .from("profiles")
-        .update({ full_name: editingName.trim() })
+        .update({ 
+          full_name: editingName.trim(),
+          avatar_url: previewAvatarUrl,
+          avatar_color: editingColor
+        })
         .eq("user_id", userId);
 
       if (error) throw error;
 
       setUserName(editingName.trim());
-      toast({ title: "Nombre actualizado correctamente" });
+      setAvatarUrl(previewAvatarUrl);
+      setAvatarColor(editingColor);
+      toast({ title: "Perfil actualizado correctamente" });
       setProfileDialogOpen(false);
     } catch (error) {
-      console.error("Error updating profile name:", error);
+      console.error("Error updating profile:", error);
       toast({
         title: "Error",
-        description: "No se pudo actualizar el nombre",
+        description: "No se pudo actualizar el perfil",
         variant: "destructive",
       });
     } finally {
@@ -210,7 +302,8 @@ export function AppSidebar() {
   ];
 
   const isCollapsed = state === "collapsed";
-  const avatarColor = getAvatarColor(userName);
+  const currentAvatarColor = avatarColor || getDefaultAvatarColor(userName);
+  const editPreviewColor = editingColor || getDefaultAvatarColor(editingName || userName);
   const initial = getInitial(userName);
 
   return (
@@ -344,7 +437,10 @@ export function AppSidebar() {
             className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
           >
             <Avatar className="h-9 w-9">
-              <AvatarFallback className={`${avatarColor} text-white font-semibold text-sm`}>
+              {avatarUrl ? (
+                <AvatarImage src={avatarUrl} alt={userName} />
+              ) : null}
+              <AvatarFallback className={`${currentAvatarColor} text-white font-semibold text-sm`}>
                 {initial}
               </AvatarFallback>
             </Avatar>
@@ -402,19 +498,94 @@ export function AppSidebar() {
 
       {/* Profile Edit Dialog */}
       <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Editar perfil</DialogTitle>
             <DialogDescription>
-              Cambia tu nombre de usuario
+              Personaliza tu avatar y nombre
             </DialogDescription>
           </DialogHeader>
+          
           <div className="flex flex-col items-center gap-4 py-4">
-            <Avatar className="h-20 w-20">
-              <AvatarFallback className={`${avatarColor} text-white font-bold text-2xl`}>
-                {getInitial(editingName || userName)}
-              </AvatarFallback>
-            </Avatar>
+            {/* Avatar Preview */}
+            <div className="relative">
+              <Avatar className="h-24 w-24">
+                {previewAvatarUrl ? (
+                  <AvatarImage src={previewAvatarUrl} alt={editingName} />
+                ) : null}
+                <AvatarFallback className={`${editPreviewColor} text-white font-bold text-3xl`}>
+                  {getInitial(editingName || userName)}
+                </AvatarFallback>
+              </Avatar>
+            </div>
+
+            <Tabs defaultValue="color" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="color">
+                  <Palette className="h-4 w-4 mr-2" />
+                  Color
+                </TabsTrigger>
+                <TabsTrigger value="photo">
+                  <Camera className="h-4 w-4 mr-2" />
+                  Foto
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="color" className="space-y-4">
+                <div className="grid grid-cols-6 gap-2 p-2">
+                  {AVATAR_COLORS.map((color) => (
+                    <button
+                      key={color.value}
+                      onClick={() => {
+                        setEditingColor(color.value);
+                        setPreviewAvatarUrl(null);
+                      }}
+                      className={`h-8 w-8 rounded-full ${color.value} transition-all hover:scale-110 ${
+                        editingColor === color.value && !previewAvatarUrl
+                          ? "ring-2 ring-offset-2 ring-primary"
+                          : ""
+                      }`}
+                      title={color.name}
+                    />
+                  ))}
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="photo" className="space-y-4">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                />
+                <div className="flex flex-col gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingAvatar}
+                    className="w-full"
+                  >
+                    <Camera className="h-4 w-4 mr-2" />
+                    {uploadingAvatar ? "Subiendo..." : "Subir foto"}
+                  </Button>
+                  {previewAvatarUrl && (
+                    <Button
+                      variant="ghost"
+                      onClick={removeAvatar}
+                      className="w-full text-destructive"
+                    >
+                      Eliminar foto
+                    </Button>
+                  )}
+                  <p className="text-xs text-muted-foreground text-center">
+                    Máximo 2MB. JPG, PNG o WebP.
+                  </p>
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            {/* Name Input */}
             <div className="w-full space-y-2">
               <Label htmlFor="profile-name">Nombre</Label>
               <Input
@@ -425,11 +596,12 @@ export function AppSidebar() {
               />
             </div>
           </div>
+          
           <DialogFooter>
             <Button variant="outline" onClick={() => setProfileDialogOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={saveProfileName} disabled={savingProfile}>
+            <Button onClick={saveProfileChanges} disabled={savingProfile}>
               {savingProfile ? "Guardando..." : "Guardar"}
             </Button>
           </DialogFooter>
