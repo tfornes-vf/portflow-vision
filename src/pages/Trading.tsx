@@ -77,7 +77,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: "date_time", label: "Fecha", visible: true },
   { key: "symbol", label: "Símbolo", visible: true },
   { key: "action", label: "Posición", visible: true },
-  { key: "side", label: "Acción", visible: true },
+  { key: "side", label: "Acción", visible: false, defaultHidden: true },
   { key: "quantity", label: "Cantidad", visible: false, defaultHidden: true },
   { key: "price", label: "Precio", visible: true },
   { key: "realized_pnl", label: "P&L", visible: true },
