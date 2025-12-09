@@ -194,10 +194,16 @@ serve(async (req) => {
     }
 
     // Sort trades by dateTime for cumulative calculation (oldest first)
+    // When trades have the same timestamp, sort by tradeID for deterministic order
     tradesToProcess.sort((a, b) => {
       const dateA = parseIBKRDate(a.dateTime);
       const dateB = parseIBKRDate(b.dateTime);
-      return dateA.localeCompare(dateB);
+      const dateCompare = dateA.localeCompare(dateB);
+      if (dateCompare !== 0) return dateCompare;
+      // Secondary sort by tradeID (numerically if possible, otherwise lexically)
+      const idA = parseInt(a.tradeID) || 0;
+      const idB = parseInt(b.tradeID) || 0;
+      return idA - idB;
     });
 
     // Calculate net amount for each trade
