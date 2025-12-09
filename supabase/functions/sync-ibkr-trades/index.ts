@@ -18,7 +18,7 @@ interface IBKRTrade {
   accountId: string;
 }
 
-const INITIAL_BALANCE = 508969.87;
+const INITIAL_BALANCE = 524711.04;
 
 // Parse IBKR date format: "20251104;122328" -> ISO string
 function parseIBKRDate(dateStr: string): string {
