@@ -68,6 +68,8 @@ interface KPIs {
   avgLoss: number;
   currentBalance: number;
   returnPercent: number;
+  periodReturnPercent: number;
+  periodStartBalance: number;
 }
 
 const INITIAL_BALANCE = 524711.04;
@@ -248,11 +250,30 @@ export default function Trading() {
     });
   }, [filteredByPeriod, exclusions]);
 
-  // Calculate daily returns for gauge
+  // Calculate daily returns for gauge (using filtered trades)
   const dailyMetrics = useMemo(() => {
-    const sortedTrades = [...trades].sort((a, b) => 
+    const sortedTrades = [...filteredByExclusions].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
+
+    // Get starting balance for the filtered period
+    const allSortedTrades = [...trades].sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    );
+    
+    let periodStartBalance = INITIAL_BALANCE;
+    if (sortedTrades.length > 0) {
+      const firstFilteredDate = new Date(sortedTrades[0].date_time);
+      for (const trade of allSortedTrades) {
+        const tradeDate = new Date(trade.date_time);
+        if (tradeDate >= firstFilteredDate) break;
+        if (trade.saldo_actual && trade.saldo_actual > 0) {
+          periodStartBalance = trade.saldo_actual;
+        } else {
+          periodStartBalance += (trade.realized_pnl || 0);
+        }
+      }
+    }
 
     const tradesByDay: Record<string, ProcessedTrade[]> = {};
     sortedTrades.forEach(trade => {
@@ -264,7 +285,7 @@ export default function Trading() {
     const days = Object.keys(tradesByDay).sort();
     const dailyReturns: { date: string; pnl: number; returnPercent: number; startBalance: number }[] = [];
     
-    let prevBalance = INITIAL_BALANCE;
+    let prevBalance = periodStartBalance;
     days.forEach(day => {
       const dayTrades = tradesByDay[day];
       const dayPnL = dayTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
@@ -286,7 +307,7 @@ export default function Trading() {
       : 0;
 
     return { dailyReturn, avgDailyReturn, lastCompleteDayReturn };
-  }, [trades]);
+  }, [filteredByExclusions, trades]);
 
   const kpis = useMemo((): KPIs => {
     const closingTrades = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
@@ -307,6 +328,33 @@ export default function Trading() {
     const currentBalance = latestTradeWithPnL?.saldo_actual ?? INITIAL_BALANCE;
     
     const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
+
+    // Calculate period start balance for filtered trades
+    const sortedFilteredTrades = [...filteredByExclusions].sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    );
+    
+    const allSortedTrades = [...trades].sort((a, b) => 
+      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
+    );
+    
+    let periodStartBalance = INITIAL_BALANCE;
+    if (sortedFilteredTrades.length > 0) {
+      const firstFilteredDate = new Date(sortedFilteredTrades[0].date_time);
+      for (const trade of allSortedTrades) {
+        const tradeDate = new Date(trade.date_time);
+        if (tradeDate >= firstFilteredDate) break;
+        if (trade.saldo_actual && trade.saldo_actual > 0) {
+          periodStartBalance = trade.saldo_actual;
+        } else {
+          periodStartBalance += (trade.realized_pnl || 0);
+        }
+      }
+    }
+    
+    const periodReturnPercent = periodStartBalance > 0 
+      ? (totalPnL / periodStartBalance) * 100 
+      : 0;
 
     const sortedForDrawdown = [...trades].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
@@ -352,6 +400,8 @@ export default function Trading() {
       avgLoss,
       currentBalance,
       returnPercent,
+      periodReturnPercent,
+      periodStartBalance,
     };
   }, [filteredByExclusions, trades]);
 
@@ -596,6 +646,9 @@ export default function Trading() {
                 </div>
                 <p className={`text-lg font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
                   {formatCurrency(kpis.totalPnL)}
+                </p>
+                <p className={`text-xs ${kpis.periodReturnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  ({kpis.periodReturnPercent >= 0 ? "+" : ""}{kpis.periodReturnPercent.toFixed(2)}%)
                 </p>
               </CardContent>
             </Card>
