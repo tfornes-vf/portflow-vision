@@ -28,15 +28,20 @@ import {
 import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
-import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter, isBefore, startOfDay, endOfDay, isToday, isYesterday } from "date-fns";
+import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter, isBefore, startOfDay, endOfDay, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { DailyReturnGauge } from "@/components/trading/DailyReturnGauge";
+import { ColumnSelector, ColumnConfig } from "@/components/trading/ColumnSelector";
+import { ExclusionFilter, ExclusionRule } from "@/components/trading/ExclusionFilter";
+import { CurrencyToggle } from "@/components/trading/CurrencyToggle";
+import { useTradeProcessing, ProcessedTrade } from "@/hooks/use-trade-processing";
+import { useExchangeRate } from "@/hooks/use-exchange-rate";
 import { DateRange } from "react-day-picker";
 
 type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
 
-interface Trade {
+interface RawTrade {
   id: string;
   ib_trade_id: string;
   symbol: string;
@@ -65,10 +70,26 @@ interface KPIs {
   returnPercent: number;
 }
 
-const INITIAL_BALANCE = 508969.87;
+const INITIAL_BALANCE = 524711.04;
+
+// Default column configuration
+const DEFAULT_COLUMNS: ColumnConfig[] = [
+  { key: "date_time", label: "Fecha", visible: true },
+  { key: "symbol", label: "Símbolo", visible: true },
+  { key: "action", label: "Posición", visible: true },
+  { key: "side", label: "Acción", visible: true },
+  { key: "quantity", label: "Cantidad", visible: false, defaultHidden: true },
+  { key: "price", label: "Precio", visible: true },
+  { key: "realized_pnl", label: "P&L", visible: true },
+  { key: "commission", label: "Comisión", visible: false, defaultHidden: true },
+  { key: "saldo_actual", label: "Saldo", visible: true },
+  { key: "trade_duration", label: "Duración", visible: true },
+  { key: "id", label: "ID DB", visible: false, defaultHidden: true },
+  { key: "ib_trade_id", label: "ID IBKR", visible: false, defaultHidden: true },
+];
 
 export default function Trading() {
-  const [trades, setTrades] = useState<Trade[]>([]);
+  const [rawTrades, setRawTrades] = useState<RawTrade[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [cooldown, setCooldown] = useState(0);
@@ -76,7 +97,16 @@ export default function Trading() {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("ALL");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
+  const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
+  const [exclusions, setExclusions] = useState<ExclusionRule[]>([]);
+  const [displayCurrency, setDisplayCurrency] = useState<"USD" | "EUR">("USD");
   const pageSize = 20;
+
+  // Process trades with FIFO matching
+  const trades = useTradeProcessing(rawTrades);
+  
+  // Exchange rate hook
+  const { rate: exchangeRate, convertToEur } = useExchangeRate();
 
   useEffect(() => {
     fetchTrades();
@@ -99,7 +129,7 @@ export default function Trading() {
         .order("date_time", { ascending: false });
 
       if (error) throw error;
-      setTrades(data || []);
+      setRawTrades(data || []);
     } catch (error) {
       console.error("Error fetching trades:", error);
       toast({
@@ -141,15 +171,32 @@ export default function Trading() {
     }
   };
 
+  // Get unique symbols for exclusion filter
+  const availableSymbols = useMemo(() => {
+    return [...new Set(rawTrades.map(t => t.symbol))].sort();
+  }, [rawTrades]);
+
+  const handleColumnChange = (key: string, visible: boolean) => {
+    setColumns(cols => cols.map(c => c.key === key ? { ...c, visible } : c));
+  };
+
+  // Currency formatting
+  const formatCurrency = (value: number) => {
+    if (displayCurrency === "EUR") {
+      return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(convertToEur(value));
+    }
+    return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD" }).format(value);
+  };
+
   const getFilterDates = (period: Period): { start: Date | null; end: Date | null } => {
     const now = new Date();
     const yesterday = startOfDay(subDays(now, 1));
     const endOfYesterday = endOfDay(subDays(now, 1));
     
     switch (period) {
-      case "T": // Today
+      case "T":
         return { start: startOfDay(now), end: endOfDay(now) };
-      case "1D": // Yesterday (last complete day)
+      case "1D":
         return { start: yesterday, end: endOfYesterday };
       case "1W": 
         return { start: subWeeks(now, 1), end: now };
@@ -168,6 +215,7 @@ export default function Trading() {
     }
   };
 
+  // Apply period filter
   const filteredByPeriod = useMemo(() => {
     const { start, end } = getFilterDates(selectedPeriod);
     if (!start) return trades;
@@ -180,14 +228,33 @@ export default function Trading() {
     });
   }, [trades, selectedPeriod, dateRange]);
 
+  // Apply exclusion filter
+  const filteredByExclusions = useMemo(() => {
+    if (exclusions.length === 0) return filteredByPeriod;
+    
+    return filteredByPeriod.filter(trade => {
+      const tradeDate = parseISO(trade.date_time);
+      
+      for (const exclusion of exclusions) {
+        if (trade.symbol === exclusion.symbol) {
+          for (const excludedDate of exclusion.dates) {
+            if (isSameDay(tradeDate, excludedDate)) {
+              return false; // Exclude this trade
+            }
+          }
+        }
+      }
+      return true;
+    });
+  }, [filteredByPeriod, exclusions]);
+
   // Calculate daily returns for gauge
   const dailyMetrics = useMemo(() => {
     const sortedTrades = [...trades].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
 
-    // Group trades by day
-    const tradesByDay: Record<string, Trade[]> = {};
+    const tradesByDay: Record<string, ProcessedTrade[]> = {};
     sortedTrades.forEach(trade => {
       const day = format(parseISO(trade.date_time), "yyyy-MM-dd");
       if (!tradesByDay[day]) tradesByDay[day] = [];
@@ -206,17 +273,14 @@ export default function Trading() {
       prevBalance += dayPnL;
     });
 
-    // Today's return
     const today = format(new Date(), "yyyy-MM-dd");
     const todayData = dailyReturns.find(d => d.date === today);
     const dailyReturn = todayData?.returnPercent || 0;
 
-    // Yesterday's return (last complete day)
     const yesterday = format(subDays(new Date(), 1), "yyyy-MM-dd");
     const yesterdayData = dailyReturns.find(d => d.date === yesterday);
     const lastCompleteDayReturn = yesterdayData?.returnPercent || 0;
 
-    // Average daily return
     const avgDailyReturn = dailyReturns.length > 0 
       ? dailyReturns.reduce((sum, d) => sum + d.returnPercent, 0) / dailyReturns.length 
       : 0;
@@ -225,21 +289,18 @@ export default function Trading() {
   }, [trades]);
 
   const kpis = useMemo((): KPIs => {
-    // Only count trades with actual realized P&L (closing trades)
-    const closingTrades = filteredByPeriod.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    const closingTrades = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
     const wins = closingTrades.filter(t => (t.realized_pnl || 0) > 0);
     const losses = closingTrades.filter(t => (t.realized_pnl || 0) < 0);
 
-    // Total P&L for the filtered period
     const totalPnL = closingTrades.reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
     const winRate = closingTrades.length > 0 ? (wins.length / closingTrades.length) * 100 : 0;
     const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losses.length) : 0;
 
-    // Get current balance from latest trade with P&L (all trades, not filtered)
     const tradesWithPnL = trades.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
     const sortedTradesWithPnL = [...tradesWithPnL].sort((a, b) => 
-      new Date(b.date_time).getTime() - new Date(a.date_time).getTime() // descending
+      new Date(b.date_time).getTime() - new Date(a.date_time).getTime()
     );
     
     const latestTradeWithPnL = sortedTradesWithPnL[0];
@@ -247,7 +308,6 @@ export default function Trading() {
     
     const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
 
-    // Calculate max drawdown from all trades
     const sortedForDrawdown = [...trades].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
@@ -268,9 +328,8 @@ export default function Trading() {
       if (drawdown > maxDrawdown) maxDrawdown = drawdown;
     }
 
-    // Sharpe ratio based on daily returns
     const dailyPnL: Record<string, number> = {};
-    filteredByPeriod.forEach(t => {
+    filteredByExclusions.forEach(t => {
       const day = format(parseISO(t.date_time), "yyyy-MM-dd");
       dailyPnL[day] = (dailyPnL[day] || 0) + (t.realized_pnl || 0);
     });
@@ -285,7 +344,7 @@ export default function Trading() {
 
     return {
       totalPnL,
-      totalTrades: filteredByPeriod.length,
+      totalTrades: filteredByExclusions.length,
       winRate,
       maxDrawdown,
       sharpeRatio,
@@ -294,23 +353,20 @@ export default function Trading() {
       currentBalance,
       returnPercent,
     };
-  }, [filteredByPeriod, trades]);
+  }, [filteredByExclusions, trades]);
 
   const chartData = useMemo(() => {
-    const sortedTrades = [...filteredByPeriod]
+    const sortedTrades = [...filteredByExclusions]
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime());
 
     if (sortedTrades.length === 0) return [];
 
-    // Group by date and aggregate daily P&L
     const dailyData: Record<string, { balance: number; pnl: number; dailyPnL: number }> = {};
     
-    // Get starting balance from all trades (before the filter period)
     const allSortedTrades = [...trades].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
-    // Find starting balance at beginning of filter period
     const firstFilteredDate = new Date(sortedTrades[0].date_time);
     let startingBalance = INITIAL_BALANCE;
     
@@ -324,7 +380,6 @@ export default function Trading() {
       }
     }
     
-    // Calculate cumulative balance within the period
     let cumBalance = startingBalance;
     
     sortedTrades.forEach(trade => {
@@ -343,23 +398,25 @@ export default function Trading() {
 
     return Object.entries(dailyData).map(([date, data]) => ({
       date,
-      balance: data.balance,
-      pnl: data.pnl,
-      dailyPnL: data.dailyPnL,
+      balance: displayCurrency === "EUR" ? convertToEur(data.balance) : data.balance,
+      pnl: displayCurrency === "EUR" ? convertToEur(data.pnl) : data.pnl,
+      dailyPnL: displayCurrency === "EUR" ? convertToEur(data.dailyPnL) : data.dailyPnL,
     }));
-  }, [filteredByPeriod, trades]);
+  }, [filteredByExclusions, trades, displayCurrency, convertToEur]);
 
   // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
-    const tradesWithPnL = filteredByPeriod.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    const tradesWithPnL = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
     if (!searchTerm) return tradesWithPnL;
     const term = searchTerm.toLowerCase();
     return tradesWithPnL.filter(t =>
       t.symbol.toLowerCase().includes(term) ||
       t.ib_trade_id.includes(term) ||
-      t.asset_class.toLowerCase().includes(term)
+      t.asset_class.toLowerCase().includes(term) ||
+      (t.action && t.action.toLowerCase().includes(term)) ||
+      (t.trade_duration && t.trade_duration.includes(term))
     );
-  }, [filteredByPeriod, searchTerm]);
+  }, [filteredByExclusions, searchTerm]);
 
   const paginatedTrades = useMemo(() => {
     const start = (currentPage - 1) * pageSize;
@@ -368,11 +425,10 @@ export default function Trading() {
 
   const totalPages = Math.ceil(searchedTrades.length / pageSize);
 
-  // Performance by symbol
   const symbolPerformance = useMemo(() => {
     const bySymbol: Record<string, { pnl: number; trades: number; wins: number }> = {};
     
-    filteredByPeriod.forEach(trade => {
+    filteredByExclusions.forEach(trade => {
       const key = trade.symbol;
       if (!bySymbol[key]) {
         bySymbol[key] = { pnl: 0, trades: 0, wins: 0 };
@@ -393,10 +449,7 @@ export default function Trading() {
       }))
       .sort((a, b) => Math.abs(b.pnl) - Math.abs(a.pnl))
       .slice(0, 8);
-  }, [filteredByPeriod]);
-
-  const formatCurrency = (value: number) => 
-    new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD" }).format(value);
+  }, [filteredByExclusions]);
 
   const periods: { key: Period; label: string }[] = [
     { key: "T", label: "T" },
@@ -406,6 +459,8 @@ export default function Trading() {
     { key: "YTD", label: "YTD" },
     { key: "ALL", label: "ALL" },
   ];
+
+  const isColumnVisible = (key: string) => columns.find(c => c.key === key)?.visible ?? true;
 
   if (loading) {
     return (
@@ -440,54 +495,73 @@ export default function Trading() {
           </Button>
         </div>
 
-        {/* Period Filter with Date Picker */}
-        <div className="flex flex-wrap gap-2 items-center">
-          {periods.map((period) => (
-            <Button
-              key={period.key}
-              variant={selectedPeriod === period.key ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setSelectedPeriod(period.key);
-                if (period.key !== "CUSTOM") setDateRange(undefined);
-              }}
-            >
-              {period.label}
-            </Button>
-          ))}
-          
-          <Popover>
-            <PopoverTrigger asChild>
+        {/* Top-Level Filters */}
+        <div className="flex flex-wrap gap-3 items-center">
+          {/* Period Filter */}
+          <div className="flex gap-1">
+            {periods.map((period) => (
               <Button
-                variant={selectedPeriod === "CUSTOM" ? "default" : "outline"}
+                key={period.key}
+                variant={selectedPeriod === period.key ? "default" : "outline"}
                 size="sm"
-                className={cn("gap-2", selectedPeriod === "CUSTOM" && "bg-primary")}
-              >
-                <CalendarIcon className="h-4 w-4" />
-                {dateRange?.from ? (
-                  dateRange.to ? (
-                    `${format(dateRange.from, "dd/MM")} - ${format(dateRange.to, "dd/MM")}`
-                  ) : (
-                    format(dateRange.from, "dd/MM/yy")
-                  )
-                ) : (
-                  "Personalizar"
-                )}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar
-                mode="range"
-                selected={dateRange}
-                onSelect={(range) => {
-                  setDateRange(range);
-                  if (range?.from) setSelectedPeriod("CUSTOM");
+                onClick={() => {
+                  setSelectedPeriod(period.key);
+                  if (period.key !== "CUSTOM") setDateRange(undefined);
                 }}
-                locale={es}
-                className="pointer-events-auto"
-              />
-            </PopoverContent>
-          </Popover>
+              >
+                {period.label}
+              </Button>
+            ))}
+            
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  variant={selectedPeriod === "CUSTOM" ? "default" : "outline"}
+                  size="sm"
+                  className={cn("gap-2", selectedPeriod === "CUSTOM" && "bg-primary")}
+                >
+                  <CalendarIcon className="h-4 w-4" />
+                  {dateRange?.from ? (
+                    dateRange.to ? (
+                      `${format(dateRange.from, "dd/MM")} - ${format(dateRange.to, "dd/MM")}`
+                    ) : (
+                      format(dateRange.from, "dd/MM/yy")
+                    )
+                  ) : (
+                    "Personalizar"
+                  )}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <Calendar
+                  mode="range"
+                  selected={dateRange}
+                  onSelect={(range) => {
+                    setDateRange(range);
+                    if (range?.from) setSelectedPeriod("CUSTOM");
+                  }}
+                  locale={es}
+                  className="pointer-events-auto"
+                />
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div className="h-6 w-px bg-border" />
+
+          {/* Currency Toggle */}
+          <CurrencyToggle
+            currency={displayCurrency}
+            onCurrencyChange={setDisplayCurrency}
+            exchangeRate={exchangeRate}
+          />
+
+          {/* Exclusion Filter */}
+          <ExclusionFilter
+            exclusions={exclusions}
+            onExclusionsChange={setExclusions}
+            availableSymbols={availableSymbols}
+          />
         </div>
 
         {/* Main Metrics Row */}
@@ -601,7 +675,7 @@ export default function Trading() {
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(val) => `$${(val / 1000).toFixed(0)}k`}
+                    tickFormatter={(val) => displayCurrency === "EUR" ? `€${(val / 1000).toFixed(0)}k` : `$${(val / 1000).toFixed(0)}k`}
                     className="text-muted-foreground"
                     domain={['auto', 'auto']}
                   />
@@ -611,9 +685,13 @@ export default function Trading() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number) => [formatCurrency(value), "Saldo"]}
+                    formatter={(value: number) => [formatCurrency(displayCurrency === "EUR" ? value / exchangeRate : value), "Saldo"]}
                   />
-                  <ReferenceLine y={INITIAL_BALANCE} stroke="hsl(var(--muted-foreground))" strokeDasharray="3 3" />
+                  <ReferenceLine 
+                    y={displayCurrency === "EUR" ? convertToEur(INITIAL_BALANCE) : INITIAL_BALANCE} 
+                    stroke="hsl(var(--muted-foreground))" 
+                    strokeDasharray="3 3" 
+                  />
                   <Line
                     type="monotone"
                     dataKey="balance"
@@ -664,70 +742,115 @@ export default function Trading() {
         {/* Trades Table */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-3">
               <CardTitle>Trades Ejecutados</CardTitle>
-              <div className="relative w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por símbolo, ID..."
-                  value={searchTerm}
-                  onChange={(e) => {
-                    setSearchTerm(e.target.value);
-                    setCurrentPage(1);
-                  }}
-                  className="pl-9"
-                />
+              <div className="flex items-center gap-3">
+                <div className="relative w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por símbolo, ID..."
+                    value={searchTerm}
+                    onChange={(e) => {
+                      setSearchTerm(e.target.value);
+                      setCurrentPage(1);
+                    }}
+                    className="pl-9"
+                  />
+                </div>
+                <ColumnSelector columns={columns} onColumnChange={handleColumnChange} />
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Fecha</TableHead>
-                    <TableHead>Símbolo</TableHead>
-                    <TableHead>Acción</TableHead>
-                    <TableHead className="text-right">Cantidad</TableHead>
-                    <TableHead className="text-right">Precio</TableHead>
-                    <TableHead className="text-right">P&L</TableHead>
-                    <TableHead className="text-right">Comisión</TableHead>
-                    <TableHead className="text-right">Saldo</TableHead>
-                    <TableHead>ID</TableHead>
+                    {isColumnVisible("date_time") && <TableHead>Fecha</TableHead>}
+                    {isColumnVisible("symbol") && <TableHead>Símbolo</TableHead>}
+                    {isColumnVisible("action") && <TableHead>Posición</TableHead>}
+                    {isColumnVisible("side") && <TableHead>Acción</TableHead>}
+                    {isColumnVisible("quantity") && <TableHead className="text-right">Cantidad</TableHead>}
+                    {isColumnVisible("price") && <TableHead className="text-right">Precio</TableHead>}
+                    {isColumnVisible("realized_pnl") && <TableHead className="text-right">P&L</TableHead>}
+                    {isColumnVisible("commission") && <TableHead className="text-right">Comisión</TableHead>}
+                    {isColumnVisible("saldo_actual") && <TableHead className="text-right">Saldo</TableHead>}
+                    {isColumnVisible("trade_duration") && <TableHead>Duración</TableHead>}
+                    {isColumnVisible("id") && <TableHead>ID DB</TableHead>}
+                    {isColumnVisible("ib_trade_id") && <TableHead>ID IBKR</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {paginatedTrades.length > 0 ? (
                     paginatedTrades.map((trade) => (
                       <TableRow key={trade.id}>
-                        <TableCell className="text-sm">
-                          {format(parseISO(trade.date_time), "dd/MM/yyyy HH:mm")}
-                        </TableCell>
-                        <TableCell className="font-medium">{trade.symbol}</TableCell>
-                        <TableCell>
-                          <Badge variant={trade.side === "BUY" ? "default" : "destructive"}>
-                            {trade.side}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{trade.quantity}</TableCell>
-                        <TableCell className="text-right">${trade.price.toFixed(2)}</TableCell>
-                        <TableCell className={`text-right font-medium ${(trade.realized_pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
-                          {formatCurrency(trade.realized_pnl || 0)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          ${trade.commission.toFixed(2)}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {formatCurrency(trade.saldo_actual || 0)}
-                        </TableCell>
-                        <TableCell className="text-xs text-muted-foreground font-mono">
-                          {trade.ib_trade_id}
-                        </TableCell>
+                        {isColumnVisible("date_time") && (
+                          <TableCell className="text-sm whitespace-nowrap">
+                            {format(parseISO(trade.date_time), "dd/MM/yyyy HH:mm")}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("symbol") && (
+                          <TableCell className="font-medium">{trade.symbol}</TableCell>
+                        )}
+                        {isColumnVisible("action") && (
+                          <TableCell>
+                            {trade.action ? (
+                              <Badge variant={trade.action === "L" ? "default" : "secondary"}>
+                                {trade.action === "L" ? "Long" : "Short"}
+                              </Badge>
+                            ) : null}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("side") && (
+                          <TableCell>
+                            <Badge variant={trade.side === "BUY" ? "outline" : "destructive"}>
+                              {trade.side}
+                            </Badge>
+                          </TableCell>
+                        )}
+                        {isColumnVisible("quantity") && (
+                          <TableCell className="text-right">{trade.quantity}</TableCell>
+                        )}
+                        {isColumnVisible("price") && (
+                          <TableCell className="text-right">
+                            {displayCurrency === "EUR" ? "€" : "$"}{trade.price.toFixed(2)}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("realized_pnl") && (
+                          <TableCell className={`text-right font-medium ${(trade.realized_pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
+                            {formatCurrency(trade.realized_pnl || 0)}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("commission") && (
+                          <TableCell className="text-right text-muted-foreground">
+                            {displayCurrency === "EUR" ? "€" : "$"}{trade.commission.toFixed(2)}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("saldo_actual") && (
+                          <TableCell className="text-right">
+                            {formatCurrency(trade.saldo_actual || 0)}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("trade_duration") && (
+                          <TableCell className="text-sm text-muted-foreground font-mono">
+                            {trade.trade_duration || "-"}
+                          </TableCell>
+                        )}
+                        {isColumnVisible("id") && (
+                          <TableCell className="text-xs text-muted-foreground font-mono">
+                            {trade.id.substring(0, 8)}...
+                          </TableCell>
+                        )}
+                        {isColumnVisible("ib_trade_id") && (
+                          <TableCell className="text-xs text-muted-foreground font-mono">
+                            {trade.ib_trade_id}
+                          </TableCell>
+                        )}
                       </TableRow>
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                      <TableCell colSpan={12} className="text-center py-8 text-muted-foreground">
                         No se encontraron trades
                       </TableCell>
                     </TableRow>
