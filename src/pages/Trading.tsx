@@ -25,7 +25,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon } from "lucide-react";
+import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter, isBefore, startOfDay, endOfDay, isSameDay } from "date-fns";
@@ -37,6 +37,9 @@ import { ExclusionFilter, ExclusionRule } from "@/components/trading/ExclusionFi
 import { CurrencyToggle } from "@/components/trading/CurrencyToggle";
 import { useTradeProcessing, ProcessedTrade } from "@/hooks/use-trade-processing";
 import { useExchangeRate } from "@/hooks/use-exchange-rate";
+import { useAssetAliases } from "@/hooks/use-asset-aliases";
+import { AliasManagerModal } from "@/components/trading/AliasManagerModal";
+import { InlineAliasEditor } from "@/components/trading/InlineAliasEditor";
 import { DateRange } from "react-day-picker";
 
 type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
@@ -78,6 +81,7 @@ const INITIAL_BALANCE = 524711.04;
 const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: "date_time", label: "Fecha", visible: true },
   { key: "symbol", label: "Símbolo", visible: true },
+  { key: "alias", label: "Alias", visible: true },
   { key: "action", label: "Posición", visible: true },
   { key: "side", label: "Acción", visible: false, defaultHidden: true },
   { key: "quantity", label: "Cantidad", visible: false, defaultHidden: true },
@@ -109,6 +113,9 @@ export default function Trading() {
   
   // Exchange rate hook
   const { rate: exchangeRate, convertToEur } = useExchangeRate();
+
+  // Asset aliases hook
+  const { aliases, getAliasForSymbol, upsertAlias, deleteAlias } = useAssetAliases();
 
   useEffect(() => {
     fetchTrades();
@@ -821,6 +828,19 @@ export default function Trading() {
                   <TableRow>
                     {isColumnVisible("date_time") && <TableHead>Fecha</TableHead>}
                     {isColumnVisible("symbol") && <TableHead>Símbolo</TableHead>}
+                    {isColumnVisible("alias") && (
+                      <TableHead>
+                        <div className="flex items-center gap-1">
+                          Alias
+                          <AliasManagerModal
+                            aliases={aliases}
+                            allSymbols={availableSymbols}
+                            onUpdateAlias={upsertAlias}
+                            onDeleteAlias={deleteAlias}
+                          />
+                        </div>
+                      </TableHead>
+                    )}
                     {isColumnVisible("action") && <TableHead>Posición</TableHead>}
                     {isColumnVisible("side") && <TableHead>Acción</TableHead>}
                     {isColumnVisible("quantity") && <TableHead className="text-right">Cantidad</TableHead>}
@@ -844,6 +864,15 @@ export default function Trading() {
                         )}
                         {isColumnVisible("symbol") && (
                           <TableCell className="font-medium">{trade.symbol}</TableCell>
+                        )}
+                        {isColumnVisible("alias") && (
+                          <TableCell>
+                            <InlineAliasEditor
+                              symbol={trade.symbol}
+                              currentAlias={getAliasForSymbol(trade.symbol)}
+                              onSave={upsertAlias}
+                            />
+                          </TableCell>
                         )}
                         {isColumnVisible("action") && (
                           <TableCell>
