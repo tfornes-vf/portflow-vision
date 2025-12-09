@@ -43,6 +43,21 @@ interface Entity {
   type_id: string | null;
 }
 
+// Gmail-style avatar colors based on first letter
+const getAvatarColor = (name: string): string => {
+  const colors = [
+    "bg-red-500", "bg-pink-500", "bg-purple-500", "bg-indigo-500",
+    "bg-blue-500", "bg-cyan-500", "bg-teal-500", "bg-green-500",
+    "bg-lime-500", "bg-yellow-500", "bg-orange-500", "bg-amber-500"
+  ];
+  const charCode = (name || "U").toUpperCase().charCodeAt(0);
+  return colors[charCode % colors.length];
+};
+
+const getInitial = (name: string): string => {
+  return (name || "U").charAt(0).toUpperCase();
+};
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const navigate = useNavigate();
@@ -53,7 +68,13 @@ export function AppSidebar() {
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [newName, setNewName] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
-  const [userEmail, setUserEmail] = useState("");
+  const [userName, setUserName] = useState("");
+  const [userId, setUserId] = useState("");
+  
+  // Profile edit state
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false);
+  const [editingName, setEditingName] = useState("");
+  const [savingProfile, setSavingProfile] = useState(false);
 
   useEffect(() => {
     fetchEntities();
@@ -65,7 +86,20 @@ export function AppSidebar() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      setUserEmail(user.email || "");
+      setUserId(user.id);
+
+      // Fetch user profile for name
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("full_name")
+        .eq("user_id", user.id)
+        .single();
+
+      if (profile?.full_name) {
+        setUserName(profile.full_name);
+      } else {
+        setUserName(user.email?.split("@")[0] || "Usuario");
+      }
 
       const { data: roleData } = await supabase
         .from("user_roles")
@@ -133,6 +167,38 @@ export function AppSidebar() {
     }
   };
 
+  const openProfileDialog = () => {
+    setEditingName(userName);
+    setProfileDialogOpen(true);
+  };
+
+  const saveProfileName = async () => {
+    if (!editingName.trim() || !userId) return;
+    
+    setSavingProfile(true);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({ full_name: editingName.trim() })
+        .eq("user_id", userId);
+
+      if (error) throw error;
+
+      setUserName(editingName.trim());
+      toast({ title: "Nombre actualizado correctamente" });
+      setProfileDialogOpen(false);
+    } catch (error) {
+      console.error("Error updating profile name:", error);
+      toast({
+        title: "Error",
+        description: "No se pudo actualizar el nombre",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
@@ -144,6 +210,8 @@ export function AppSidebar() {
   ];
 
   const isCollapsed = state === "collapsed";
+  const avatarColor = getAvatarColor(userName);
+  const initial = getInitial(userName);
 
   return (
     <Sidebar className={isCollapsed ? "w-14" : "w-64"}>
@@ -271,20 +339,21 @@ export function AppSidebar() {
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
-                <User className="h-4 w-4" />
+          <button
+            onClick={openProfileDialog}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+          >
+            <Avatar className="h-9 w-9">
+              <AvatarFallback className={`${avatarColor} text-white font-semibold text-sm`}>
+                {initial}
               </AvatarFallback>
             </Avatar>
             {!isCollapsed && (
-              <div className="flex flex-col">
-                <span className="text-xs text-muted-foreground truncate max-w-[120px]">
-                  {userEmail || "Usuario"}
-                </span>
-              </div>
+              <span className="text-sm font-medium text-sidebar-foreground truncate max-w-[120px]">
+                {userName}
+              </span>
             )}
-          </div>
+          </button>
           {!isCollapsed && (
             <Button
               variant="ghost"
@@ -327,6 +396,42 @@ export function AppSidebar() {
               Cancelar
             </Button>
             <Button onClick={saveRename}>Guardar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Profile Edit Dialog */}
+      <Dialog open={profileDialogOpen} onOpenChange={setProfileDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar perfil</DialogTitle>
+            <DialogDescription>
+              Cambia tu nombre de usuario
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-4">
+            <Avatar className="h-20 w-20">
+              <AvatarFallback className={`${avatarColor} text-white font-bold text-2xl`}>
+                {getInitial(editingName || userName)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="w-full space-y-2">
+              <Label htmlFor="profile-name">Nombre</Label>
+              <Input
+                id="profile-name"
+                value={editingName}
+                onChange={(e) => setEditingName(e.target.value)}
+                placeholder="Tu nombre"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setProfileDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={saveProfileName} disabled={savingProfile}>
+              {savingProfile ? "Guardando..." : "Guardar"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
