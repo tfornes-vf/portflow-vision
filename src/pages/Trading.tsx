@@ -795,7 +795,7 @@ export default function Trading() {
                         {isColumnVisible("action") && (
                           <TableCell>
                             {trade.action ? (
-                              <Badge variant={trade.action === "L" ? "default" : "secondary"}>
+                              <Badge variant={trade.action === "L" ? "default" : "destructive"}>
                                 {trade.action === "L" ? "Long" : "Short"}
                               </Badge>
                             ) : null}
