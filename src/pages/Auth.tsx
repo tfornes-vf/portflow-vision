@@ -6,15 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { User, Session } from "@supabase/supabase-js";
 import logo from "@/assets/ycapital-logo.svg";
+import { Chrome } from "lucide-react";
 
 export default function Auth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const navigate = useNavigate();
@@ -28,7 +31,10 @@ export default function Auth() {
         setUser(session?.user ?? null);
         
         if (session?.user) {
-          navigate("/");
+          // Check if user is enabled before redirecting
+          setTimeout(() => {
+            checkUserAndRedirect(session.user.id);
+          }, 0);
         }
       }
     );
@@ -39,12 +45,64 @@ export default function Auth() {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        navigate("/");
+        checkUserAndRedirect(session.user.id);
       }
     });
 
     return () => subscription.unsubscribe();
   }, [navigate]);
+
+  const checkUserAndRedirect = async (userId: string) => {
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_enabled")
+        .eq("user_id", userId)
+        .single();
+
+      if (profile?.is_enabled) {
+        navigate("/");
+      } else {
+        navigate("/pending-approval");
+      }
+    } catch (error) {
+      console.error("Error checking user status:", error);
+      navigate("/pending-approval");
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true);
+    try {
+      const redirectUrl = `${window.location.origin}/`;
+      
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: redirectUrl,
+        },
+      });
+
+      if (error) throw error;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "No se pudo iniciar sesión con Google",
+        variant: "destructive",
+      });
+      setGoogleLoading(false);
+    }
+  };
+
+  const notifyAdminOfNewUser = async (email: string, fullName: string) => {
+    try {
+      await supabase.functions.invoke("notify-new-user", {
+        body: { email, full_name: fullName },
+      });
+    } catch (error) {
+      console.error("Error notifying admin:", error);
+    }
+  };
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -53,7 +111,7 @@ export default function Auth() {
     try {
       const redirectUrl = `${window.location.origin}/`;
       
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -66,9 +124,12 @@ export default function Auth() {
 
       if (error) throw error;
 
+      // Notify admin of new user registration
+      await notifyAdminOfNewUser(email, fullName);
+
       toast({
         title: "Cuenta creada",
-        description: "¡Bienvenido! Redirigiendo al dashboard...",
+        description: "Tu cuenta está pendiente de aprobación por un administrador.",
       });
     } catch (error: any) {
       toast({
@@ -95,7 +156,7 @@ export default function Auth() {
 
       toast({
         title: "Inicio de sesión exitoso",
-        description: "Redirigiendo al dashboard...",
+        description: "Verificando permisos...",
       });
     } catch (error: any) {
       toast({
@@ -119,7 +180,30 @@ export default function Auth() {
             Gestiona tu portfolio de trading de forma profesional
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          {/* Google OAuth Button */}
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
+          >
+            <Chrome className="h-5 w-5 mr-2" />
+            {googleLoading ? "Conectando..." : "Continuar con Google"}
+          </Button>
+
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <Separator className="w-full" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                O continúa con email
+              </span>
+            </div>
+          </div>
+
           <Tabs defaultValue="signin" className="w-full">
             <TabsList className="grid w-full grid-cols-2">
               <TabsTrigger value="signin">Iniciar Sesión</TabsTrigger>

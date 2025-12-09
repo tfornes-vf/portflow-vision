@@ -1,5 +1,5 @@
-import { Home, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon, LineChart } from "lucide-react";
-import { NavLink } from "react-router-dom";
+import { Home, Building2, User, Settings, Plus, MoreVertical, Edit2, Settings as SettingsIcon, LineChart, Shield, LogOut } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { EntityManagementModal } from "@/components/modals/EntityManagementModal";
@@ -45,16 +45,40 @@ interface Entity {
 
 export function AppSidebar() {
   const { state } = useSidebar();
+  const navigate = useNavigate();
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entityModalOpen, setEntityModalOpen] = useState(false);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
   const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
   const [newName, setNewName] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
 
   useEffect(() => {
     fetchEntities();
+    checkAdminStatus();
   }, []);
+
+  const checkAdminStatus = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      setUserEmail(user.email || "");
+
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .eq("role", "admin")
+        .single();
+
+      setIsAdmin(!!roleData);
+    } catch (error) {
+      console.error("Error checking admin status:", error);
+    }
+  };
 
   const fetchEntities = async () => {
     try {
@@ -107,6 +131,11 @@ export function AppSidebar() {
         variant: "destructive",
       });
     }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    navigate("/auth");
   };
 
   const dashboardItems = [
@@ -222,24 +251,50 @@ export function AppSidebar() {
                   </NavLink>
                 </SidebarMenuButton>
               </SidebarMenuItem>
+              {isAdmin && (
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <NavLink
+                      to="/admin"
+                      className="hover:bg-sidebar-accent"
+                    >
+                      <Shield className="h-4 w-4" />
+                      {!isCollapsed && <span>Administración</span>}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              )}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border p-4">
-        <div className="flex items-center gap-2">
-          <Avatar className="h-8 w-8">
-            <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
-              <User className="h-4 w-4" />
-            </AvatarFallback>
-          </Avatar>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Avatar className="h-8 w-8">
+              <AvatarFallback className="bg-sidebar-primary text-sidebar-primary-foreground">
+                <User className="h-4 w-4" />
+              </AvatarFallback>
+            </Avatar>
+            {!isCollapsed && (
+              <div className="flex flex-col">
+                <span className="text-xs text-muted-foreground truncate max-w-[120px]">
+                  {userEmail || "Usuario"}
+                </span>
+              </div>
+            )}
+          </div>
           {!isCollapsed && (
-            <div className="flex flex-col">
-              <span className="text-sm font-medium text-sidebar-foreground">
-                Usuario
-              </span>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleSignOut}
+              className="h-8 w-8 p-0"
+              title="Cerrar sesión"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
           )}
         </div>
       </SidebarFooter>
