@@ -232,28 +232,22 @@ const Admin = () => {
     
     setUpdating(deletingProfile.id);
     try {
-      // Delete user roles first
-      await supabase
-        .from("user_roles")
-        .delete()
-        .eq("user_id", deletingProfile.user_id);
-
-      // Delete profile
-      const { error } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", deletingProfile.id);
+      // Call edge function to delete user completely from backend
+      const { data, error } = await supabase.functions.invoke("delete-user", {
+        body: { user_id: deletingProfile.user_id },
+      });
 
       if (error) throw error;
+      if (data?.error) throw new Error(data.error);
 
       setProfiles(prev => prev.filter(p => p.id !== deletingProfile.id));
       setUserRoles(prev => prev.filter(r => r.user_id !== deletingProfile.user_id));
       
-      toast.success(`Usuario ${deletingProfile.email} eliminado`);
+      toast.success(`Usuario ${deletingProfile.email} eliminado completamente`);
       setDeleteDialogOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting user:", error);
-      toast.error("Error al eliminar el usuario");
+      toast.error(error.message || "Error al eliminar el usuario");
     } finally {
       setUpdating(null);
     }
