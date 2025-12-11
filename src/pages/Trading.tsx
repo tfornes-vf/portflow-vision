@@ -400,7 +400,7 @@ export default function Trading() {
 
     return {
       totalPnL,
-      totalTrades: filteredByExclusions.length,
+      totalTrades: closingTrades.length,
       winRate,
       maxDrawdown,
       sharpeRatio,
