@@ -21,12 +21,11 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip as RechartsTooltip,
+  Tooltip,
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
 import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon, Settings } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter, isBefore, startOfDay, endOfDay, isSameDay } from "date-fns";
@@ -740,7 +739,7 @@ export default function Trading() {
                     className="text-muted-foreground"
                     domain={['auto', 'auto']}
                   />
-                  <RechartsTooltip
+                  <Tooltip
                     contentStyle={{
                       backgroundColor: "hsl(var(--card))",
                       border: "1px solid hsl(var(--border))",
@@ -777,41 +776,25 @@ export default function Trading() {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {symbolPerformance.map((symbol) => {
-                const alias = getAliasForSymbol(symbol.name);
-                return (
-                  <div
-                    key={symbol.name}
-                    className="p-4 rounded-lg border bg-card"
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      {alias ? (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Badge variant="outline" className="font-mono cursor-help">{symbol.name}</Badge>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <p>{alias}</p>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      ) : (
-                        <Badge variant="outline" className="font-mono">{symbol.name}</Badge>
-                      )}
-                      <span className="text-xs text-muted-foreground">
-                        {symbol.trades} trades
-                      </span>
-                    </div>
-                    <p className={`text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                      {formatCurrency(symbol.pnl)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Win Rate: {symbol.winRate.toFixed(1)}%
-                    </p>
+              {symbolPerformance.map((symbol) => (
+                <div
+                  key={symbol.name}
+                  className="p-4 rounded-lg border bg-card"
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <Badge variant="outline" className="font-mono">{symbol.name}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {symbol.trades} trades
+                    </span>
                   </div>
-                );
-              })}
+                  <p className={`text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                    {formatCurrency(symbol.pnl)}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Win Rate: {symbol.winRate.toFixed(1)}%
+                  </p>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>
