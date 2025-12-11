@@ -486,16 +486,17 @@ export default function Trading() {
   const symbolPerformance = useMemo(() => {
     const bySymbol: Record<string, { pnl: number; trades: number; wins: number }> = {};
     
-    filteredByExclusions.forEach(trade => {
+    // Only count trades with realized_pnl !== 0
+    const tradesWithPnL = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    
+    tradesWithPnL.forEach(trade => {
       const key = trade.symbol;
       if (!bySymbol[key]) {
         bySymbol[key] = { pnl: 0, trades: 0, wins: 0 };
       }
       bySymbol[key].trades++;
-      if (trade.realized_pnl) {
-        bySymbol[key].pnl += trade.realized_pnl;
-        if (trade.realized_pnl > 0) bySymbol[key].wins++;
-      }
+      bySymbol[key].pnl += trade.realized_pnl || 0;
+      if ((trade.realized_pnl || 0) > 0) bySymbol[key].wins++;
     });
 
     return Object.entries(bySymbol)
