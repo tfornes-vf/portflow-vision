@@ -40,6 +40,7 @@ import { useExchangeRate } from "@/hooks/use-exchange-rate";
 import { useAssetAliases } from "@/hooks/use-asset-aliases";
 import { AliasManagerModal } from "@/components/trading/AliasManagerModal";
 import { InlineAliasEditor } from "@/components/trading/InlineAliasEditor";
+import { TradingChatbot } from "@/components/trading/TradingChatbot";
 import { DateRange } from "react-day-picker";
 
 type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
@@ -970,6 +971,27 @@ export default function Trading() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Chatbot */}
+      <TradingChatbot
+        tradingContext={{
+          currentBalance: kpis.currentBalance,
+          totalPnL: kpis.totalPnL,
+          returnPercent: kpis.returnPercent,
+          winRate: kpis.winRate,
+          avgWin: kpis.avgWin,
+          avgLoss: kpis.avgLoss,
+          sharpeRatio: kpis.sharpeRatio,
+          maxDrawdown: kpis.maxDrawdown,
+          totalTrades: kpis.totalTrades,
+          recentTrades: searchedTrades.slice(0, 20).map(t => ({
+            symbol: t.symbol,
+            pnl: t.realized_pnl || 0,
+            date: format(parseISO(t.date_time), "dd/MM/yyyy HH:mm"),
+            action: t.action || t.side,
+          })),
+        }}
+      />
     </AppLayout>
   );
 }
