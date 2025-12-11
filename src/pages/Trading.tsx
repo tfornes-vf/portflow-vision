@@ -193,9 +193,9 @@ export default function Trading() {
   // Currency formatting
   const formatCurrency = (value: number) => {
     if (displayCurrency === "EUR") {
-      return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR" }).format(convertToEur(value));
+      return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(convertToEur(value));
     }
-    return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD" }).format(value);
+    return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
   };
 
   const getFilterDates = (period: Period): { start: Date | null; end: Date | null } => {
@@ -896,7 +896,7 @@ export default function Trading() {
                         )}
                         {isColumnVisible("price") && (
                           <TableCell className="text-right">
-                            {displayCurrency === "EUR" ? "€" : "$"}{trade.price.toFixed(2)}
+                            {displayCurrency === "EUR" ? "€" : "$"}{Math.round(trade.price).toLocaleString("es-ES")}
                           </TableCell>
                         )}
                         {isColumnVisible("realized_pnl") && (
@@ -906,7 +906,7 @@ export default function Trading() {
                         )}
                         {isColumnVisible("commission") && (
                           <TableCell className="text-right text-muted-foreground">
-                            {displayCurrency === "EUR" ? "€" : "$"}{trade.commission.toFixed(2)}
+                            {displayCurrency === "EUR" ? "€" : "$"}{Math.round(trade.commission).toLocaleString("es-ES")}
                           </TableCell>
                         )}
                         {isColumnVisible("saldo_actual") && (
