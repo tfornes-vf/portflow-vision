@@ -10,6 +10,23 @@ interface NewUserNotification {
   full_name: string;
 }
 
+// HTML escape function to prevent XSS/injection
+const escapeHtml = (str: string): string => {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+};
+
+// Validate email format
+const isValidEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
+
 const handler = async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -18,7 +35,16 @@ const handler = async (req: Request): Promise<Response> => {
   try {
     const { email, full_name }: NewUserNotification = await req.json();
     
-    console.log(`Sending notification for new user: ${email}`);
+    // Input validation
+    if (!email || typeof email !== 'string' || !isValidEmail(email)) {
+      throw new Error("Invalid email format");
+    }
+    
+    // Limit field lengths
+    const sanitizedEmail = escapeHtml(email.slice(0, 255));
+    const sanitizedFullName = escapeHtml((full_name || '').slice(0, 100));
+    
+    console.log(`Sending notification for new user: ${sanitizedEmail}`);
 
     const RESEND_API_KEY = Deno.env.get("RESEND_API_KEY");
     if (!RESEND_API_KEY) {
@@ -36,7 +62,7 @@ const handler = async (req: Request): Promise<Response> => {
       body: JSON.stringify({
         from: "Portflow <onboarding@resend.dev>",
         to: [adminEmail],
-        subject: `Nuevo usuario pendiente de aprobación: ${email}`,
+        subject: `Nuevo usuario pendiente de aprobación: ${sanitizedEmail}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <h1 style="color: #1a1a2e; border-bottom: 2px solid #4f46e5; padding-bottom: 10px;">
@@ -44,8 +70,8 @@ const handler = async (req: Request): Promise<Response> => {
             </h1>
             
             <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
-              <p style="margin: 0 0 10px 0;"><strong>Nombre:</strong> ${full_name || 'No especificado'}</p>
-              <p style="margin: 0 0 10px 0;"><strong>Email:</strong> ${email}</p>
+              <p style="margin: 0 0 10px 0;"><strong>Nombre:</strong> ${sanitizedFullName || 'No especificado'}</p>
+              <p style="margin: 0 0 10px 0;"><strong>Email:</strong> ${sanitizedEmail}</p>
               <p style="margin: 0;"><strong>Fecha:</strong> ${new Date().toLocaleString('es-ES', { timeZone: 'Europe/Madrid' })}</p>
             </div>
             
