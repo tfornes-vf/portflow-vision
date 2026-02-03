@@ -12,38 +12,78 @@ import { Filter, X, CalendarIcon } from "lucide-react";
 import { format, eachDayOfInterval, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { DateRange } from "react-day-picker";
+import { Checkbox } from "@/components/ui/checkbox";
 
 export interface ExclusionRule {
   symbol: string;
-  dates: Date[];
+  dates: Date[]; // Empty array means exclude ALL dates for this symbol
+  allDates?: boolean; // Flag to indicate excluding all dates
+}
+
+export interface PresetConfig {
+  label: string;
+  exclusions: ExclusionRule[];
 }
 
 interface ExclusionFilterProps {
   exclusions: ExclusionRule[];
   onExclusionsChange: (exclusions: ExclusionRule[]) => void;
   availableSymbols: string[];
+  preset?: PresetConfig;
 }
 
-// Preset: MBTX5 on Nov 12-17, 2025
-const PRESET_EXCLUSION: ExclusionRule = {
-  symbol: "MBTX5",
-  dates: eachDayOfInterval({
-    start: new Date(2025, 10, 12), // Nov 12, 2025
-    end: new Date(2025, 10, 17),   // Nov 17, 2025
-  }),
+// Default preset: MBTX5 on Nov 12-17, 2025
+const DEFAULT_PRESET: PresetConfig = {
+  label: "MBTX5 (12-17 Nov 2025)",
+  exclusions: [{
+    symbol: "MBTX5",
+    dates: eachDayOfInterval({
+      start: new Date(2025, 10, 12), // Nov 12, 2025
+      end: new Date(2025, 10, 17),   // Nov 17, 2025
+    }),
+  }],
 };
 
 export function ExclusionFilter({
   exclusions,
   onExclusionsChange,
   availableSymbols,
+  preset,
 }: ExclusionFilterProps) {
   const [newSymbol, setNewSymbol] = useState("");
   const [selectedRange, setSelectedRange] = useState<DateRange | undefined>(undefined);
+  const [excludeAllDates, setExcludeAllDates] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
 
+  const activePreset = preset || DEFAULT_PRESET;
+
   const addExclusion = () => {
-    if (!newSymbol.trim() || !selectedRange?.from) return;
+    if (!newSymbol.trim()) return;
+    
+    // If excluding all dates, we don't need a date range
+    if (excludeAllDates) {
+      const existing = exclusions.find(e => e.symbol === newSymbol.toUpperCase());
+      if (existing) {
+        // Update to all dates
+        onExclusionsChange(
+          exclusions.map(e => 
+            e.symbol === newSymbol.toUpperCase() 
+              ? { ...e, dates: [], allDates: true }
+              : e
+          )
+        );
+      } else {
+        onExclusionsChange([
+          ...exclusions,
+          { symbol: newSymbol.toUpperCase(), dates: [], allDates: true },
+        ]);
+      }
+      setNewSymbol("");
+      setExcludeAllDates(false);
+      return;
+    }
+    
+    if (!selectedRange?.from) return;
     
     // Generate all dates in the range
     const datesToAdd = selectedRange.to 
@@ -62,14 +102,14 @@ export function ExclusionFilter({
       onExclusionsChange(
         exclusions.map(e => 
           e.symbol === newSymbol.toUpperCase() 
-            ? { ...e, dates: newDates.sort((a, b) => a.getTime() - b.getTime()) }
+            ? { ...e, dates: newDates.sort((a, b) => a.getTime() - b.getTime()), allDates: false }
             : e
         )
       );
     } else {
       onExclusionsChange([
         ...exclusions,
-        { symbol: newSymbol.toUpperCase(), dates: datesToAdd },
+        { symbol: newSymbol.toUpperCase(), dates: datesToAdd, allDates: false },
       ]);
     }
     
@@ -82,24 +122,31 @@ export function ExclusionFilter({
   };
 
   const applyPreset = () => {
-    const existing = exclusions.find(e => e.symbol === PRESET_EXCLUSION.symbol);
-    if (existing) {
-      const newDates = [...existing.dates];
-      PRESET_EXCLUSION.dates.forEach(d => {
-        if (!newDates.some(nd => isSameDay(nd, d))) {
-          newDates.push(d);
+    const newExclusions = [...exclusions];
+    
+    activePreset.exclusions.forEach(presetExclusion => {
+      const existing = newExclusions.find(e => e.symbol === presetExclusion.symbol);
+      if (existing) {
+        if (presetExclusion.allDates) {
+          // Replace with all dates exclusion
+          const idx = newExclusions.indexOf(existing);
+          newExclusions[idx] = { ...presetExclusion };
+        } else {
+          // Merge dates
+          const newDates = [...existing.dates];
+          presetExclusion.dates.forEach(d => {
+            if (!newDates.some(nd => isSameDay(nd, d))) {
+              newDates.push(d);
+            }
+          });
+          existing.dates = newDates.sort((a, b) => a.getTime() - b.getTime());
         }
-      });
-      onExclusionsChange(
-        exclusions.map(e => 
-          e.symbol === PRESET_EXCLUSION.symbol 
-            ? { ...e, dates: newDates.sort((a, b) => a.getTime() - b.getTime()) }
-            : e
-        )
-      );
-    } else {
-      onExclusionsChange([...exclusions, PRESET_EXCLUSION]);
-    }
+      } else {
+        newExclusions.push({ ...presetExclusion });
+      }
+    });
+    
+    onExclusionsChange(newExclusions);
   };
 
   const clearAll = () => {
@@ -109,14 +156,18 @@ export function ExclusionFilter({
   const hasExclusions = exclusions.length > 0;
 
   // Format date range for display
-  const formatDateRange = (dates: Date[]) => {
-    if (dates.length === 0) return "";
-    if (dates.length === 1) return format(dates[0], "dd/MM");
+  const formatDateRange = (exclusion: ExclusionRule) => {
+    if (exclusion.allDates || exclusion.dates.length === 0) {
+      return "Todas las fechas";
+    }
+    if (exclusion.dates.length === 1) {
+      return format(exclusion.dates[0], "dd/MM");
+    }
     
-    const sorted = [...dates].sort((a, b) => a.getTime() - b.getTime());
+    const sorted = [...exclusion.dates].sort((a, b) => a.getTime() - b.getTime());
     const first = sorted[0];
     const last = sorted[sorted.length - 1];
-    return `${format(first, "dd/MM")} - ${format(last, "dd/MM")}`;
+    return `${format(first, "dd/MM")} - ${format(last, "dd/MM")} (${exclusion.dates.length} días)`;
   };
 
   return (
@@ -154,7 +205,7 @@ export function ExclusionFilter({
             className="w-full text-xs"
             onClick={applyPreset}
           >
-            Aplicar preset: MBTX5 (12-17 Nov 2025)
+            Aplicar preset: {activePreset.label}
           </Button>
 
           {/* Current exclusions */}
@@ -171,7 +222,7 @@ export function ExclusionFilter({
                       {exclusion.symbol}
                     </Badge>
                     <p className="text-xs text-muted-foreground mt-1">
-                      {formatDateRange(exclusion.dates)} ({exclusion.dates.length} días)
+                      {formatDateRange(exclusion)}
                     </p>
                   </div>
                   <Button
@@ -203,38 +254,55 @@ export function ExclusionFilter({
               ))}
             </datalist>
             
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" size="sm" className="w-full gap-2">
-                  <CalendarIcon className="h-4 w-4" />
-                  {selectedRange?.from ? (
-                    selectedRange.to ? (
-                      `${format(selectedRange.from, "dd/MM")} - ${format(selectedRange.to, "dd/MM")}`
+            {/* Exclude all dates checkbox */}
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="exclude-all" 
+                checked={excludeAllDates}
+                onCheckedChange={(checked) => setExcludeAllDates(checked === true)}
+              />
+              <label 
+                htmlFor="exclude-all" 
+                className="text-xs text-muted-foreground cursor-pointer"
+              >
+                Excluir todas las fechas de este símbolo
+              </label>
+            </div>
+            
+            {!excludeAllDates && (
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="w-full gap-2">
+                    <CalendarIcon className="h-4 w-4" />
+                    {selectedRange?.from ? (
+                      selectedRange.to ? (
+                        `${format(selectedRange.from, "dd/MM")} - ${format(selectedRange.to, "dd/MM")}`
+                      ) : (
+                        format(selectedRange.from, "dd/MM/yy")
+                      )
                     ) : (
-                      format(selectedRange.from, "dd/MM/yy")
-                    )
-                  ) : (
-                    "Seleccionar rango de fechas"
-                  )}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 bg-popover" align="start">
-                <Calendar
-                  mode="range"
-                  selected={selectedRange}
-                  onSelect={setSelectedRange}
-                  locale={es}
-                  className="pointer-events-auto"
-                  numberOfMonths={1}
-                />
-              </PopoverContent>
-            </Popover>
+                      "Seleccionar rango de fechas"
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 bg-popover" align="start">
+                  <Calendar
+                    mode="range"
+                    selected={selectedRange}
+                    onSelect={setSelectedRange}
+                    locale={es}
+                    className="pointer-events-auto"
+                    numberOfMonths={1}
+                  />
+                </PopoverContent>
+              </Popover>
+            )}
 
             <Button
               size="sm"
               className="w-full"
               onClick={addExclusion}
-              disabled={!newSymbol.trim() || !selectedRange?.from}
+              disabled={!newSymbol.trim() || (!excludeAllDates && !selectedRange?.from)}
             >
               Añadir exclusión
             </Button>
