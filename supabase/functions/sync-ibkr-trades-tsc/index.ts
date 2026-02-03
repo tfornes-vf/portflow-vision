@@ -18,8 +18,8 @@ interface IBKRTrade {
   accountId: string;
 }
 
-// TSC account initial balance
-const INITIAL_BALANCE = 430702;
+// TSC account initial balance (calculated: 694270.45 - sum of all PnL = 697492.41)
+const INITIAL_BALANCE = 697492.41;
 
 // Exclude trades before this date for TSC account
 const EXCLUDE_BEFORE = new Date("2025-01-15T00:00:00Z");

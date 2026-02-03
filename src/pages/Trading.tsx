@@ -103,7 +103,7 @@ const ACCOUNT_CONFIG: Record<Exclude<AccountId, "ALL">, AccountConfig> = {
   },
   "TSC": {
     name: "TSC",
-    initialBalance: 430702,
+    initialBalance: 697492.41,
     table: "ib_trades_tsc",
     syncFunction: "sync-ibkr-trades-tsc",
     excludeBefore: new Date("2025-01-15"),
