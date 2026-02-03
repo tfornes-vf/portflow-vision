@@ -3,6 +3,9 @@ project_id = "xuoyyyscvjrejiclqaaq"
 [functions.sync-ibkr-trades]
 verify_jwt = true
 
+[functions.sync-ibkr-trades-tsc]
+verify_jwt = true
+
 [functions.notify-new-user]
 verify_jwt = true
 
