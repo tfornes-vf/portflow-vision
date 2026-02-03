@@ -40,7 +40,7 @@ import { es } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { DailyReturnGauge } from "@/components/trading/DailyReturnGauge";
 import { ColumnSelector, ColumnConfig } from "@/components/trading/ColumnSelector";
-import { ExclusionFilter, ExclusionRule } from "@/components/trading/ExclusionFilter";
+import { ExclusionFilter, ExclusionRule, PresetConfig } from "@/components/trading/ExclusionFilter";
 import { CurrencyToggle } from "@/components/trading/CurrencyToggle";
 import { useTradeProcessing, ProcessedTrade } from "@/hooks/use-trade-processing";
 import { useExchangeRate } from "@/hooks/use-exchange-rate";
@@ -107,6 +107,26 @@ const ACCOUNT_CONFIG: Record<Exclude<AccountId, "ALL">, AccountConfig> = {
     table: "ib_trades_tsc",
     syncFunction: "sync-ibkr-trades-tsc",
     excludeBefore: new Date("2025-01-15"),
+  },
+};
+
+// Presets for exclusion filter per account
+const ACCOUNT_PRESETS: Record<Exclude<AccountId, "ALL">, PresetConfig> = {
+  "U22563190": {
+    label: "MBTX5 (12-17 Nov 2025)",
+    exclusions: [{
+      symbol: "MBTX5",
+      dates: [],
+      allDates: false,
+    }],
+  },
+  "TSC": {
+    label: "3SLE, QIH6, IGLN (todos)",
+    exclusions: [
+      { symbol: "3SLE", dates: [], allDates: true },
+      { symbol: "QIH6", dates: [], allDates: true },
+      { symbol: "IGLN", dates: [], allDates: true },
+    ],
   },
 };
 
@@ -323,9 +343,14 @@ export default function Trading() {
       
       for (const exclusion of exclusions) {
         if (trade.symbol === exclusion.symbol) {
+          // If allDates flag is set or dates array is empty, exclude all dates for this symbol
+          if (exclusion.allDates || exclusion.dates.length === 0) {
+            return false;
+          }
+          // Otherwise check specific dates
           for (const excludedDate of exclusion.dates) {
             if (isSameDay(tradeDate, excludedDate)) {
-              return false; // Exclude this trade
+              return false;
             }
           }
         }
@@ -711,6 +736,7 @@ export default function Trading() {
             exclusions={exclusions}
             onExclusionsChange={setExclusions}
             availableSymbols={availableSymbols}
+            preset={selectedAccount !== "ALL" ? ACCOUNT_PRESETS[selectedAccount] : undefined}
           />
         </div>
 
