@@ -110,7 +110,7 @@ const ACCOUNT_CONFIG: Record<Exclude<AccountId, "ALL">, AccountConfig> = {
   },
 };
 
-const DEFAULT_ACCOUNT: AccountId = "U22563190";
+const DEFAULT_ACCOUNT: AccountId = "TSC";
 
 // Default column configuration
 const DEFAULT_COLUMNS: ColumnConfig[] = [
