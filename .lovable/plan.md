@@ -1,97 +1,97 @@
 
-
 # Plan: Filtro por Account ID en Trading
 
 ## Resumen
-Implementar la capacidad de filtrar trades por cuenta (account_id) en la pantalla de Trading, añadiendo soporte para una segunda cuenta IBKR con ID `138538827070437630935960`.
+Implementar selector de cuenta en la pantalla de Trading para filtrar trades, estadisticas y saldo por cuenta IBKR. Se añadira soporte para la segunda cuenta con ID `138538827070437630935960`.
 
-## Decisiones de Diseño
+## Configuracion de Cuentas
 
-**Usar la misma tabla `ib_trades`**: Es la mejor opción porque:
-- Ya tiene la columna `account_id`
-- Permite consultas unificadas cuando se quiera ver todo
-- No duplica estructura ni código
+| Account ID | Nombre | Balance Inicial | Flex Query ID | Exclusiones |
+|------------|--------|-----------------|---------------|-------------|
+| U22563190 | Cuenta Principal | $524,711.04 | IBKR_ID_HISTORIA / IBKR_ID_HOY | Ninguna |
+| 138538827070437630935960 | TSC | $430,702 | 1380264 | Antes del 15 Ene 2025 |
 
-## Pasos de Implementación
+## Pasos de Implementacion
 
-### 1. Añadir Nuevos Secrets
-Se necesitan los Flex Query IDs para la nueva cuenta:
-- `IBKR_ID_HISTORIA_2` - ID del reporte histórico de la segunda cuenta
-- `IBKR_ID_HOY_2` - ID del reporte del día de la segunda cuenta
-- `IBKR_INITIAL_BALANCE_2` - Balance inicial de la segunda cuenta (si es diferente)
+### Paso 1: Configurar Secrets
+Añadir los secrets necesarios para la segunda cuenta:
+- `IBKR_ID_HISTORIA_2` = `1380264`
+- `IBKR_INITIAL_BALANCE_2` = `430702`
 
-### 2. Actualizar Edge Function `sync-ibkr-trades`
+### Paso 2: Actualizar Edge Function `sync-ibkr-trades`
 
-**Cambios:**
-- Recibir parámetro `accountId` en el body de la request
-- Mapear el accountId a los secrets correspondientes:
-  ```
-  U22563190 → IBKR_ID_HISTORIA, IBKR_ID_HOY, INITIAL_BALANCE = 524711.04
-  138538827070437630935960 → IBKR_ID_HISTORIA_2, IBKR_ID_HOY_2, INITIAL_BALANCE_2
-  ```
-- Calcular el `saldo_actual` de forma independiente por cuenta
-- Usar el mismo IBKR_TOKEN (asumiendo que es compartido)
+Modificar para soportar sincronizacion multi-cuenta:
 
-### 3. Actualizar UI de Trading (`src/pages/Trading.tsx`)
+1. **Recibir parametro `accountId`** en el body de la request
+2. **Mapear cuenta a configuracion**:
+   - Si `accountId` es `U22563190` o no especificado: usar secrets actuales
+   - Si `accountId` es `138538827070437630935960`: usar `IBKR_ID_HISTORIA_2`
+3. **Balance inicial por cuenta**: Usar el balance inicial correspondiente segun la cuenta
+4. **Calcular `saldo_actual` independientemente** por cuenta
 
-**Nuevo estado:**
+### Paso 3: Actualizar UI de Trading
+
+**Nuevos elementos:**
+
+1. **Selector de Cuenta** (dropdown al lado del boton Refresh):
+   - "U22563190 (Principal)" - seleccionada por defecto
+   - "TSC (138538...)" 
+   - "Todas las cuentas"
+
+2. **Nuevo estado**:
 ```typescript
-const [selectedAccount, setSelectedAccount] = useState<string>("ALL");
+const [selectedAccount, setSelectedAccount] = useState<string>("U22563190");
 ```
 
-**Nuevo selector** (al lado del botón Refresh):
-- Dropdown con opciones:
-  - "Todas las cuentas" (ALL)
-  - "U22563190" (cuenta 1)
-  - "138538827070437630935960" (cuenta 2)
-
-**Filtrado de datos:**
-- `filteredByAccount` que filtra `rawTrades` por `account_id` cuando no es "ALL"
-- Este filtro se aplica antes de los demás filtros (periodo, exclusiones)
-
-**Sincronización:**
-- Cuando se hace refresh, sincronizar solo la cuenta seleccionada (si hay una específica)
-- Si está en "ALL", sincronizar ambas cuentas secuencialmente
-
-**Recálculo de KPIs:**
-- Los KPIs se calculan solo sobre los trades de la cuenta seleccionada
-- El `saldo_actual` ya viene calculado por cuenta desde el edge function
-
-### 4. Configuración de Cuentas
-
-Crear un objeto de configuración para las cuentas:
+3. **Configuracion de cuentas** (constante):
 ```typescript
 const ACCOUNT_CONFIG = {
   "U22563190": {
-    name: "Cuenta Principal",
+    name: "Principal",
     initialBalance: 524711.04,
   },
   "138538827070437630935960": {
-    name: "Cuenta Secundaria", 
-    initialBalance: 0, // Se definirá cuando se añadan los secrets
+    name: "TSC",
+    initialBalance: 430702,
+    excludeBefore: new Date("2025-01-15"),
   },
 };
 ```
 
-## Flujo de Usuario
+**Logica de filtrado:**
 
-1. Usuario entra a Trading → ve todas las cuentas por defecto
-2. Selecciona una cuenta específica en el dropdown
-3. Los datos se filtran automáticamente
-4. Al hacer "Refresh Trades", solo sincroniza esa cuenta
-5. Los KPIs muestran métricas de la cuenta seleccionada
+1. Filtrar `rawTrades` por `account_id` cuando hay cuenta seleccionada
+2. Para cuenta TSC: excluir trades anteriores al 15 de enero 2025
+3. Este filtro se aplica ANTES de los demas filtros (periodo, exclusiones)
 
-## Dependencias
+**Recalculo de KPIs:**
 
-Antes de implementar necesito que proporciones:
-1. Los IDs de Flex Query para la segunda cuenta (IBKR_ID_HISTORIA_2 y IBKR_ID_HOY_2)
-2. El balance inicial de la segunda cuenta
-3. Confirmar si el IBKR_TOKEN es el mismo para ambas cuentas
+- Usar el `initialBalance` de la cuenta seleccionada para calculos de retorno
+- El `saldo_actual` se filtra por cuenta
+- Los KPIs (Win Rate, P&L, etc.) solo consideran trades de la cuenta seleccionada
+
+**Sincronizacion:**
+
+- Al hacer "Refresh Trades", sincronizar la cuenta seleccionada
+- Si esta en "Todas", sincronizar ambas secuencialmente
 
 ## Archivos a Modificar
 
 | Archivo | Cambios |
 |---------|---------|
-| `supabase/functions/sync-ibkr-trades/index.ts` | Soporte multi-cuenta |
-| `src/pages/Trading.tsx` | Selector de cuenta + filtrado |
+| `supabase/functions/sync-ibkr-trades/index.ts` | Soporte multi-cuenta con parametro accountId |
+| `src/pages/Trading.tsx` | Selector de cuenta, filtrado por account_id, logica de exclusion por fecha |
 
+## Flujo de Usuario
+
+1. Usuario abre Trading → ve trades de cuenta Principal (U22563190) por defecto
+2. Selecciona "TSC" en el dropdown → ve solo trades de esa cuenta (post 15 Ene 2025)
+3. Los KPIs y graficos se recalculan para esa cuenta
+4. Al hacer "Refresh Trades" → sincroniza solo la cuenta seleccionada
+5. Puede seleccionar "Todas las cuentas" para ver todo combinado
+
+## Consideraciones Tecnicas
+
+- El filtro de fecha (15 Ene 2025) para TSC se aplica en el frontend, no en la BD
+- Cada cuenta tiene su propio calculo de `saldo_actual` basado en su balance inicial
+- Los secrets IBKR_TOKEN se comparten entre cuentas (segun mencionaste es el mismo token)
