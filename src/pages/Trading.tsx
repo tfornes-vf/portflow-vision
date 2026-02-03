@@ -8,6 +8,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   Table,
   TableBody,
   TableCell,
@@ -76,7 +83,34 @@ interface KPIs {
   periodStartBalance: number;
 }
 
-const INITIAL_BALANCE = 524711.04;
+// Account configuration
+type AccountId = "U22563190" | "TSC" | "ALL";
+
+interface AccountConfig {
+  name: string;
+  initialBalance: number;
+  table: "ib_trades" | "ib_trades_tsc";
+  syncFunction: string;
+  excludeBefore?: Date;
+}
+
+const ACCOUNT_CONFIG: Record<Exclude<AccountId, "ALL">, AccountConfig> = {
+  "U22563190": {
+    name: "Principal",
+    initialBalance: 524711.04,
+    table: "ib_trades",
+    syncFunction: "sync-ibkr-trades",
+  },
+  "TSC": {
+    name: "TSC",
+    initialBalance: 430702,
+    table: "ib_trades_tsc",
+    syncFunction: "sync-ibkr-trades-tsc",
+    excludeBefore: new Date("2025-01-15"),
+  },
+};
+
+const DEFAULT_ACCOUNT: AccountId = "U22563190";
 
 // Default column configuration
 const DEFAULT_COLUMNS: ColumnConfig[] = [
@@ -107,7 +141,16 @@ export default function Trading() {
   const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
   const [exclusions, setExclusions] = useState<ExclusionRule[]>([]);
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "EUR">("USD");
+  const [selectedAccount, setSelectedAccount] = useState<AccountId>(DEFAULT_ACCOUNT);
   const pageSize = 20;
+
+  // Get initial balance for the selected account
+  const getInitialBalance = () => {
+    if (selectedAccount === "ALL") {
+      return ACCOUNT_CONFIG["U22563190"].initialBalance + ACCOUNT_CONFIG["TSC"].initialBalance;
+    }
+    return ACCOUNT_CONFIG[selectedAccount].initialBalance;
+  };
 
   // Process trades with FIFO matching
   const trades = useTradeProcessing(rawTrades);
@@ -118,9 +161,10 @@ export default function Trading() {
   // Asset aliases hook
   const { aliases, getAliasForSymbol, upsertAlias, deleteAlias } = useAssetAliases();
 
+  // Fetch trades when account changes
   useEffect(() => {
     fetchTrades();
-  }, []);
+  }, [selectedAccount]);
 
   // Countdown timer for cooldown
   useEffect(() => {
@@ -132,14 +176,31 @@ export default function Trading() {
   }, [cooldown]);
 
   const fetchTrades = async () => {
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("ib_trades")
-        .select("*")
-        .order("date_time", { ascending: false });
+      if (selectedAccount === "ALL") {
+        // Fetch from both tables
+        const [result1, result2] = await Promise.all([
+          supabase.from("ib_trades").select("*").order("date_time", { ascending: false }),
+          supabase.from("ib_trades_tsc").select("*").order("date_time", { ascending: false }),
+        ]);
+        
+        if (result1.error) throw result1.error;
+        if (result2.error) throw result2.error;
+        
+        const allTrades = [...(result1.data || []), ...(result2.data || [])];
+        allTrades.sort((a, b) => new Date(b.date_time).getTime() - new Date(a.date_time).getTime());
+        setRawTrades(allTrades);
+      } else {
+        const config = ACCOUNT_CONFIG[selectedAccount];
+        const { data, error } = await supabase
+          .from(config.table)
+          .select("*")
+          .order("date_time", { ascending: false });
 
-      if (error) throw error;
-      setRawTrades(data || []);
+        if (error) throw error;
+        setRawTrades(data || []);
+      }
     } catch (error) {
       console.error("Error fetching trades:", error);
       toast({
@@ -158,14 +219,29 @@ export default function Trading() {
     setSyncing(true);
 
     try {
-      const { data, error } = await supabase.functions.invoke("sync-ibkr-trades");
+      if (selectedAccount === "ALL") {
+        // Sync both accounts sequentially
+        const { data: data1, error: error1 } = await supabase.functions.invoke("sync-ibkr-trades");
+        if (error1) throw error1;
+        
+        const { data: data2, error: error2 } = await supabase.functions.invoke("sync-ibkr-trades-tsc");
+        if (error2) throw error2;
+        
+        toast({
+          title: "Sincronización completada",
+          description: `Principal: ${data1?.count || 0} trades, TSC: ${data2?.count || 0} trades`,
+        });
+      } else {
+        const config = ACCOUNT_CONFIG[selectedAccount];
+        const { data, error } = await supabase.functions.invoke(config.syncFunction);
 
-      if (error) throw error;
+        if (error) throw error;
 
-      toast({
-        title: "Sincronización completada",
-        description: data?.message || "Trades actualizados correctamente",
-      });
+        toast({
+          title: "Sincronización completada",
+          description: data?.message || "Trades actualizados correctamente",
+        });
+      }
 
       await fetchTrades();
     } catch (error) {
@@ -269,7 +345,7 @@ export default function Trading() {
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
-    let periodStartBalance = INITIAL_BALANCE;
+    let periodStartBalance = getInitialBalance();
     if (sortedTrades.length > 0) {
       const firstFilteredDate = new Date(sortedTrades[0].date_time);
       for (const trade of allSortedTrades) {
@@ -333,9 +409,10 @@ export default function Trading() {
     );
     
     const latestTradeWithPnL = sortedTradesWithPnL[0];
-    const currentBalance = latestTradeWithPnL?.saldo_actual ?? INITIAL_BALANCE;
+    const initialBalance = getInitialBalance();
+    const currentBalance = latestTradeWithPnL?.saldo_actual ?? initialBalance;
     
-    const returnPercent = ((currentBalance - INITIAL_BALANCE) / INITIAL_BALANCE) * 100;
+    const returnPercent = ((currentBalance - initialBalance) / initialBalance) * 100;
 
     // Calculate period start balance for filtered trades
     const sortedFilteredTrades = [...filteredByExclusions].sort((a, b) => 
@@ -346,7 +423,7 @@ export default function Trading() {
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
-    let periodStartBalance = INITIAL_BALANCE;
+    let periodStartBalance = getInitialBalance();
     if (sortedFilteredTrades.length > 0) {
       const firstFilteredDate = new Date(sortedFilteredTrades[0].date_time);
       for (const trade of allSortedTrades) {
@@ -368,8 +445,8 @@ export default function Trading() {
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
-    let runningBalance = INITIAL_BALANCE;
-    let peak = INITIAL_BALANCE;
+    let runningBalance = getInitialBalance();
+    let peak = getInitialBalance();
     let maxDrawdown = 0;
     
     for (const trade of sortedForDrawdown) {
@@ -426,7 +503,7 @@ export default function Trading() {
     );
     
     const firstFilteredDate = new Date(sortedTrades[0].date_time);
-    let startingBalance = INITIAL_BALANCE;
+    let startingBalance = getInitialBalance();
     
     for (const trade of allSortedTrades) {
       const tradeDate = new Date(trade.date_time);
@@ -446,10 +523,10 @@ export default function Trading() {
       cumBalance += pnl;
       
       if (!dailyData[dateKey]) {
-        dailyData[dateKey] = { balance: cumBalance, pnl: cumBalance - INITIAL_BALANCE, dailyPnL: pnl };
+        dailyData[dateKey] = { balance: cumBalance, pnl: cumBalance - getInitialBalance(), dailyPnL: pnl };
       } else {
         dailyData[dateKey].balance = cumBalance;
-        dailyData[dateKey].pnl = cumBalance - INITIAL_BALANCE;
+        dailyData[dateKey].pnl = cumBalance - getInitialBalance();
         dailyData[dateKey].dailyPnL += pnl;
       }
     });
@@ -539,19 +616,33 @@ export default function Trading() {
     <AppLayout>
       <div className="container mx-auto p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight text-foreground">Trading</h1>
             <p className="text-muted-foreground mt-1">Análisis de rendimiento de trading IBKR</p>
           </div>
-          <Button 
-            onClick={syncTrades} 
-            disabled={syncing || cooldown > 0}
-            variant="outline"
-          >
-            <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-            {syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh Trades"}
-          </Button>
+          <div className="flex items-center gap-3">
+            {/* Account Selector */}
+            <Select value={selectedAccount} onValueChange={(v) => setSelectedAccount(v as AccountId)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Selecciona cuenta" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="U22563190">Principal (U22563190)</SelectItem>
+                <SelectItem value="TSC">TSC</SelectItem>
+                <SelectItem value="ALL">Todas las cuentas</SelectItem>
+              </SelectContent>
+            </Select>
+            
+            <Button 
+              onClick={syncTrades} 
+              disabled={syncing || cooldown > 0}
+              variant="outline"
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
+              {syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh Trades"}
+            </Button>
+          </div>
         </div>
 
         {/* Top-Level Filters */}
@@ -750,7 +841,7 @@ export default function Trading() {
                     formatter={(value: number) => [formatCurrency(displayCurrency === "EUR" ? value / exchangeRate : value), "Saldo"]}
                   />
                   <ReferenceLine 
-                    y={displayCurrency === "EUR" ? convertToEur(INITIAL_BALANCE) : INITIAL_BALANCE} 
+                    y={displayCurrency === "EUR" ? convertToEur(getInitialBalance()) : getInitialBalance()} 
                     stroke="hsl(var(--muted-foreground))" 
                     strokeDasharray="3 3" 
                   />
