@@ -639,17 +639,17 @@ export default function Trading() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto p-6 space-y-6">
+      <div className="container mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between flex-wrap gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-foreground">Trading</h1>
-            <p className="text-muted-foreground mt-1">Análisis de rendimiento de trading IBKR</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Trading</h1>
+            <p className="text-sm text-muted-foreground mt-1">Análisis de rendimiento de trading IBKR</p>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Account Selector */}
             <Select value={selectedAccount} onValueChange={(v) => setSelectedAccount(v as AccountId)}>
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[140px] sm:w-[180px] text-xs sm:text-sm">
                 <SelectValue placeholder="Selecciona cuenta" />
               </SelectTrigger>
               <SelectContent>
@@ -663,17 +663,20 @@ export default function Trading() {
               onClick={syncTrades} 
               disabled={syncing || cooldown > 0}
               variant="outline"
+              size="sm"
+              className="text-xs sm:text-sm"
             >
-              <RefreshCw className={`h-4 w-4 mr-2 ${syncing ? "animate-spin" : ""}`} />
-              {syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh Trades"}
+              <RefreshCw className={`h-4 w-4 mr-1 sm:mr-2 ${syncing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">{syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh Trades"}</span>
+              <span className="sm:hidden">{syncing ? "..." : cooldown > 0 ? `${cooldown}s` : "Sync"}</span>
             </Button>
           </div>
         </div>
 
         {/* Top-Level Filters */}
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
           {/* Period Filter */}
-          <div className="flex gap-1">
+          <div className="flex gap-1 flex-wrap">
             {periods.map((period) => (
               <Button
                 key={period.key}
@@ -741,12 +744,12 @@ export default function Trading() {
         </div>
 
         {/* Main Metrics Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {/* Current Balance Card */}
-          <Card className="lg:col-span-1">
-            <CardContent className="pt-6">
-              <p className="text-sm text-muted-foreground mb-1">Saldo Actual</p>
-              <p className="text-3xl font-bold text-foreground">{formatCurrency(kpis.currentBalance)}</p>
+          <Card className="sm:col-span-1">
+            <CardContent className="pt-4 sm:pt-6">
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo Actual</p>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(kpis.currentBalance)}</p>
               <p className={`text-sm mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
                 {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% desde inicio
               </p>
@@ -763,7 +766,7 @@ export default function Trading() {
           </div>
 
           {/* KPI Cards */}
-          <div className="lg:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div className="sm:col-span-2 lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
             <Card>
               <CardContent className="pt-4">
                 <div className="flex items-center gap-2">
@@ -894,7 +897,7 @@ export default function Trading() {
             <CardTitle>Rendimiento por Símbolo</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               {symbolPerformance.map((symbol) => (
                 <div
                   key={symbol.name}
@@ -921,10 +924,10 @@ export default function Trading() {
         {/* Trades Table */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <CardTitle>Trades Ejecutados</CardTitle>
-              <div className="flex items-center gap-3">
-                <div className="relative w-64">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <CardTitle className="text-base sm:text-lg">Trades Ejecutados</CardTitle>
+              <div className="flex items-center gap-2 sm:gap-3">
+                <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     placeholder="Buscar por símbolo, ID..."
@@ -1062,8 +1065,8 @@ export default function Trading() {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between mt-4">
-                <p className="text-sm text-muted-foreground">
+              <div className="flex flex-col sm:flex-row items-center justify-between mt-4 gap-2">
+                <p className="text-xs sm:text-sm text-muted-foreground">
                   Mostrando {((currentPage - 1) * pageSize) + 1} - {Math.min(currentPage * pageSize, searchedTrades.length)} de {searchedTrades.length}
                 </p>
                 <div className="flex gap-2">

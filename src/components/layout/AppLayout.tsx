@@ -20,12 +20,12 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
         <AppSidebar />
         <div className="flex-1 flex flex-col">
           <header className="sticky top-0 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex h-14 items-center gap-4 px-6">
+            <div className="flex h-14 items-center gap-2 sm:gap-4 px-3 sm:px-6">
               <SidebarTrigger />
               <div className="flex-1" />
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <Select defaultValue="gestor">
-                  <SelectTrigger className="w-[140px]">
+                  <SelectTrigger className="w-[100px] sm:w-[140px] text-xs sm:text-sm">
                     <SelectValue placeholder="Rol" />
                   </SelectTrigger>
                   <SelectContent>
@@ -35,7 +35,7 @@ export const AppLayout = ({ children }: AppLayoutProps) => {
                   </SelectContent>
                 </Select>
                 <Select defaultValue="vf-empresa">
-                  <SelectTrigger className="w-[160px]">
+                  <SelectTrigger className="w-[120px] sm:w-[160px] text-xs sm:text-sm hidden sm:flex">
                     <SelectValue placeholder="Entidad" />
                   </SelectTrigger>
                   <SelectContent>
