@@ -30,11 +30,21 @@ function parseIBKRDate(dateStr: string): string {
     return new Date().toISOString();
   }
 
-  // Handle IBKR format: "20251104;122328"
-  const match = dateStr.match(/^(\d{4})(\d{2})(\d{2});?(\d{2})(\d{2})(\d{2})?/);
-  if (match) {
-    const [, year, month, day, hour, min, sec = '00'] = match;
+  // Handle IBKR format with time: "20251104;122328"
+  const matchWithTime = dateStr.match(/^(\d{4})(\d{2})(\d{2});(\d{2})(\d{2})(\d{2})?/);
+  if (matchWithTime) {
+    const [, year, month, day, hour, min, sec = '00'] = matchWithTime;
     const date = new Date(`${year}-${month}-${day}T${hour}:${min}:${sec}Z`);
+    if (!isNaN(date.getTime())) {
+      return date.toISOString();
+    }
+  }
+
+  // Handle IBKR date-only format: "20260123"
+  const matchDateOnly = dateStr.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (matchDateOnly) {
+    const [, year, month, day] = matchDateOnly;
+    const date = new Date(`${year}-${month}-${day}T00:00:00Z`);
     if (!isNaN(date.getTime())) {
       return date.toISOString();
     }
