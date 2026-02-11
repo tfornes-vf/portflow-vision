@@ -328,6 +328,7 @@ export type Database = {
           date_time: string
           ib_trade_id: string
           id: string
+          net_cash: number | null
           price: number
           quantity: number
           realized_pnl: number | null
@@ -346,6 +347,7 @@ export type Database = {
           date_time: string
           ib_trade_id: string
           id?: string
+          net_cash?: number | null
           price: number
           quantity: number
           realized_pnl?: number | null
@@ -364,6 +366,7 @@ export type Database = {
           date_time?: string
           ib_trade_id?: string
           id?: string
+          net_cash?: number | null
           price?: number
           quantity?: number
           realized_pnl?: number | null
