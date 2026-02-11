@@ -48,6 +48,7 @@ import { useAssetAliases } from "@/hooks/use-asset-aliases";
 import { AliasManagerModal } from "@/components/trading/AliasManagerModal";
 import { InlineAliasEditor } from "@/components/trading/InlineAliasEditor";
 import { TradingChatbot } from "@/components/trading/TradingChatbot";
+import { OpenPositionsTable } from "@/components/trading/OpenPositionsTable";
 import { DateRange } from "react-day-picker";
 
 type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
@@ -103,7 +104,7 @@ const ACCOUNT_CONFIG: Record<Exclude<AccountId, "ALL">, AccountConfig> = {
   },
   "TSC": {
     name: "TSC",
-    initialBalance: 697492.41,
+    initialBalance: 599746.01,
     table: "ib_trades_tsc",
     syncFunction: "sync-ibkr-trades-tsc",
     excludeBefore: new Date("2025-01-15"),
@@ -162,6 +163,7 @@ export default function Trading() {
   const [exclusions, setExclusions] = useState<ExclusionRule[]>([]);
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "EUR">("USD");
   const [selectedAccount, setSelectedAccount] = useState<AccountId>(DEFAULT_ACCOUNT);
+  const [positionsRefreshTrigger, setPositionsRefreshTrigger] = useState(0);
   const pageSize = 20;
 
   // Get initial balance for the selected account
@@ -264,6 +266,7 @@ export default function Trading() {
       }
 
       await fetchTrades();
+      setPositionsRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error("Error syncing trades:", error);
       toast({
@@ -920,6 +923,13 @@ export default function Trading() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Open Positions */}
+        <OpenPositionsTable
+          formatCurrency={formatCurrency}
+          displayCurrency={displayCurrency}
+          refreshTrigger={positionsRefreshTrigger}
+        />
 
         {/* Trades Table */}
         <Card>
