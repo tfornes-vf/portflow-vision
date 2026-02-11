@@ -215,6 +215,51 @@ export type Database = {
         }
         Relationships: []
       }
+      ib_open_positions_tsc: {
+        Row: {
+          account_id: string
+          cost_price: number
+          created_at: string
+          currency: string
+          id: string
+          market_price: number
+          market_value: number
+          position_date: string
+          quantity: number
+          symbol: string
+          unrealized_pnl: number
+          updated_at: string
+        }
+        Insert: {
+          account_id?: string
+          cost_price?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          market_price?: number
+          market_value?: number
+          position_date?: string
+          quantity?: number
+          symbol: string
+          unrealized_pnl?: number
+          updated_at?: string
+        }
+        Update: {
+          account_id?: string
+          cost_price?: number
+          created_at?: string
+          currency?: string
+          id?: string
+          market_price?: number
+          market_value?: number
+          position_date?: string
+          quantity?: number
+          symbol?: string
+          unrealized_pnl?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ib_trades: {
         Row: {
           account_id: string

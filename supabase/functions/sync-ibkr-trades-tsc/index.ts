@@ -18,8 +18,19 @@ interface IBKRTrade {
   accountId: string;
 }
 
-// TSC account initial balance (calculated: 694270.45 - sum of all PnL = 697492.41)
-const INITIAL_BALANCE = 697492.41;
+interface IBKROpenPosition {
+  symbol: string;
+  quantity: number;
+  costPrice: number;
+  marketPrice: number;
+  marketValue: number;
+  unrealizedPnl: number;
+  currency: string;
+  accountId: string;
+}
+
+// Default initial balance (~599,746.01 EUR as starting NAV)
+const DEFAULT_INITIAL_BALANCE = 599746.01;
 
 // Exclude trades before this date for TSC account
 const EXCLUDE_BEFORE = new Date("2025-01-15T00:00:00Z");
@@ -30,7 +41,6 @@ function parseIBKRDate(dateStr: string): string {
     return new Date().toISOString();
   }
 
-  // Handle IBKR format with time: "20251104;122328"
   const matchWithTime = dateStr.match(/^(\d{4})(\d{2})(\d{2});(\d{2})(\d{2})(\d{2})?/);
   if (matchWithTime) {
     const [, year, month, day, hour, min, sec = '00'] = matchWithTime;
@@ -40,7 +50,6 @@ function parseIBKRDate(dateStr: string): string {
     }
   }
 
-  // Handle IBKR date-only format: "20260123"
   const matchDateOnly = dateStr.match(/^(\d{4})(\d{2})(\d{2})$/);
   if (matchDateOnly) {
     const [, year, month, day] = matchDateOnly;
@@ -50,7 +59,6 @@ function parseIBKRDate(dateStr: string): string {
     }
   }
 
-  // Try direct parsing
   const date = new Date(dateStr);
   if (!isNaN(date.getTime())) {
     return date.toISOString();
@@ -60,7 +68,71 @@ function parseIBKRDate(dateStr: string): string {
   return new Date().toISOString();
 }
 
-async function fetchFlexReport(token: string, queryId: string, reportType: string): Promise<IBKRTrade[]> {
+// Extract initial balance from CashReport XML node if present
+function extractCashReportBalance(xml: string): number | null {
+  // Look for CashReport with endingCash or endingSettledCash
+  const cashRegex = /<CashReport[^>]*?\s(?:endingCash|endingSettledCash)\s*=\s*"([^"]*)"[^>]*?\/>/gi;
+  let match;
+  while ((match = cashRegex.exec(xml)) !== null) {
+    const val = parseFloat(match[1]);
+    if (!isNaN(val) && val !== 0) {
+      console.log(`📊 Extracted CashReport balance: ${val}`);
+      return val;
+    }
+  }
+  
+  // Also try netLiquidation from EquitySummary
+  const eqRegex = /<EquitySummaryInBase[^>]*?\snetLiquidation\s*=\s*"([^"]*)"[^>]*?\/>/gi;
+  while ((match = eqRegex.exec(xml)) !== null) {
+    const val = parseFloat(match[1]);
+    if (!isNaN(val) && val !== 0) {
+      console.log(`📊 Extracted EquitySummary netLiquidation: ${val}`);
+      return val;
+    }
+  }
+  
+  return null;
+}
+
+// Parse OpenPosition nodes from XML
+function parseOpenPositions(xml: string): IBKROpenPosition[] {
+  const positions: IBKROpenPosition[] = [];
+  const posRegex = /<OpenPosition\s+([^>]*?)\s*\/>/gs;
+  let match;
+
+  while ((match = posRegex.exec(xml)) !== null) {
+    const attrs = match[1];
+
+    const getAttr = (name: string): string => {
+      const attrMatch = attrs.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
+      return attrMatch ? attrMatch[1] : "";
+    };
+
+    const getNumAttr = (name: string): number => {
+      const val = getAttr(name);
+      return val ? parseFloat(val) : 0;
+    };
+
+    const symbol = getAttr('symbol');
+    if (symbol) {
+      positions.push({
+        symbol,
+        quantity: getNumAttr('quantity') || getNumAttr('position'),
+        costPrice: getNumAttr('costBasisPrice') || getNumAttr('costPrice'),
+        marketPrice: getNumAttr('markPrice') || getNumAttr('closePrice'),
+        marketValue: getNumAttr('positionValue') || getNumAttr('marketValue'),
+        unrealizedPnl: getNumAttr('fifoPnlUnrealized') || getNumAttr('unrealizedPnl'),
+        currency: getAttr('currency') || 'USD',
+        accountId: getAttr('accountId') || getAttr('acctId') || 'TSC',
+      });
+    }
+  }
+
+  console.log(`📦 Parsed ${positions.length} open positions`);
+  return positions;
+}
+
+async function fetchFlexReport(token: string, queryId: string, reportType: string): Promise<{ trades: IBKRTrade[]; openPositions: IBKROpenPosition[]; initialBalance: number | null; rawXml: string }> {
   console.log(`⏳ Downloading ${reportType} (ID: ${queryId})...`);
   
   try {
@@ -71,7 +143,7 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     const refCodeMatch = requestText.match(/<ReferenceCode>(\d+)<\/ReferenceCode>/);
     if (!refCodeMatch) {
       console.error(`Failed to get reference code for ${reportType}:`, requestText);
-      return [];
+      return { trades: [], openPositions: [], initialBalance: null, rawXml: "" };
     }
     
     const referenceCode = refCodeMatch[1];
@@ -97,18 +169,21 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       attempts++;
     }
     
-    // Log first 500 chars of XML for debugging
     console.log(`📄 XML preview (${reportType}):`, reportXml.substring(0, 500));
     
-    // Check for Trade or TradeConfirm elements
+    // Extract CashReport balance if present
+    const initialBalance = extractCashReportBalance(reportXml);
+    
+    // Parse open positions
+    const openPositions = parseOpenPositions(reportXml);
+    
+    // Parse trades
     if (!reportXml.includes("Trade")) {
       console.log(`No trades found in ${reportType}`);
-      return [];
+      return { trades: [], openPositions, initialBalance, rawXml: reportXml };
     }
     
     const trades: IBKRTrade[] = [];
-    
-    // Match both <Trade> and <TradeConfirm> elements
     const tradeRegex = /<(?:Trade|TradeConfirm)\s+([^>]*?)\s*\/>/gs;
     let match;
     
@@ -127,7 +202,6 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       
       const tradeId = getAttr('tradeID');
       if (tradeId) {
-        // Handle different field names between Trade and TradeConfirm
         const tradePrice = getNumAttr('tradePrice') || getNumAttr('price');
         const commission = getNumAttr('ibCommission') || getNumAttr('commission');
         const pnl = getNumAttr('fifoPnlRealized') || getNumAttr('realizedPL') || 0;
@@ -150,11 +224,11 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     if (trades.length > 0) {
       console.log(`📊 First trade sample:`, JSON.stringify(trades[0]));
     }
-    return trades;
+    return { trades, openPositions, initialBalance, rawXml: reportXml };
     
   } catch (error) {
     console.error(`⚠️ Error downloading ${reportType}:`, error);
-    return [];
+    return { trades: [], openPositions: [], initialBalance: null, rawXml: "" };
   }
 }
 
@@ -177,8 +251,11 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // For TSC, we only have one query ID for all trades (historical + today)
-    const trades = await fetchFlexReport(IBKR_TOKEN, QUERY_ID, "TSC Report");
+    const { trades, openPositions, initialBalance: xmlBalance } = await fetchFlexReport(IBKR_TOKEN, QUERY_ID, "TSC Report");
+
+    // Use CashReport balance if available, otherwise default
+    const INITIAL_BALANCE = xmlBalance ?? DEFAULT_INITIAL_BALANCE;
+    console.log(`📊 Using initial balance: ${INITIAL_BALANCE} (from ${xmlBalance ? 'XML CashReport' : 'default'})`);
 
     // Deduplicate by tradeID, preferring trades with P&L data
     const uniqueTrades = new Map<string, IBKRTrade>();
@@ -201,37 +278,29 @@ serve(async (req) => {
     
     console.log(`⚗️ Total unique trades after date filter: ${tradesToProcess.length}`);
 
-    if (tradesToProcess.length === 0) {
-      return new Response(
-        JSON.stringify({ success: true, message: "No trades to sync", count: 0 }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Sort trades by dateTime for cumulative calculation (oldest first)
+    // Sort trades by dateTime + tradeID ascending (deterministic ordering)
     tradesToProcess.sort((a, b) => {
       const dateA = parseIBKRDate(a.dateTime);
       const dateB = parseIBKRDate(b.dateTime);
       const dateCompare = dateA.localeCompare(dateB);
       if (dateCompare !== 0) return dateCompare;
+      // Use tradeID as tiebreaker (ascending)
       const idA = parseInt(a.tradeID) || 0;
       const idB = parseInt(b.tradeID) || 0;
       return idA - idB;
     });
 
-    // Calculate net amount for each trade
     const calculateNetAmount = (trade: IBKRTrade): number => {
       const amount = Math.abs(trade.quantity) * trade.tradePrice;
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    console.log(`📊 Using initial balance: ${INITIAL_BALANCE}`);
-
-    // Prepare records with cumulative balance starting from initial
+    // Calculate saldo iteratively: Saldo = Previous + fifoPnlRealized + ibCommission
+    // Note: ibCommission from IBKR XML is already negative, so we add it algebraically
     let runningBalance = INITIAL_BALANCE;
     
     const records = tradesToProcess.map(trade => {
-      runningBalance += trade.fifoPnlRealized || 0;
+      runningBalance += (trade.fifoPnlRealized || 0) + (trade.ibCommission || 0);
       return {
         ib_trade_id: trade.tradeID,
         symbol: trade.symbol,
@@ -249,24 +318,61 @@ serve(async (req) => {
       };
     });
 
-    const { data, error } = await supabase
-      .from('ib_trades_tsc')
-      .upsert(records, { onConflict: 'ib_trade_id' })
-      .select();
+    // Upsert trades
+    let tradesCount = 0;
+    if (records.length > 0) {
+      const { data, error } = await supabase
+        .from('ib_trades_tsc')
+        .upsert(records, { onConflict: 'ib_trade_id' })
+        .select();
 
-    if (error) {
-      console.error('Supabase error:', error);
-      throw error;
+      if (error) {
+        console.error('Supabase trades error:', error);
+        throw error;
+      }
+      tradesCount = data?.length || 0;
+      console.log(`🎉 Synced ${tradesCount} TSC trades`);
     }
 
-    console.log(`🎉 Synced ${data?.length || 0} TSC trades to Supabase`);
+    // Upsert open positions (clear old ones first, then insert new)
+    let positionsCount = 0;
+    if (openPositions.length > 0) {
+      // Delete existing positions for this account
+      await supabase.from('ib_open_positions_tsc').delete().eq('account_id', 'TSC');
+
+      const posRecords = openPositions.map(pos => ({
+        symbol: pos.symbol,
+        quantity: pos.quantity,
+        cost_price: pos.costPrice,
+        market_price: pos.marketPrice,
+        market_value: pos.marketValue,
+        unrealized_pnl: pos.unrealizedPnl,
+        currency: pos.currency || 'USD',
+        account_id: pos.accountId || 'TSC',
+        position_date: new Date().toISOString(),
+      }));
+
+      const { data: posData, error: posError } = await supabase
+        .from('ib_open_positions_tsc')
+        .insert(posRecords)
+        .select();
+
+      if (posError) {
+        console.error('Supabase positions error:', posError);
+      } else {
+        positionsCount = posData?.length || 0;
+        console.log(`📦 Synced ${positionsCount} open positions`);
+      }
+    }
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Synced ${data?.length || 0} TSC trades`,
-        count: data?.length || 0,
-        lastBalance: runningBalance
+        message: `Synced ${tradesCount} trades, ${positionsCount} open positions`,
+        count: tradesCount,
+        positionsCount,
+        lastBalance: runningBalance,
+        initialBalance: INITIAL_BALANCE,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
