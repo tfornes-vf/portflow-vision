@@ -69,6 +69,7 @@ interface RawTrade {
   realized_pnl: number | null;
   account_id: string;
   saldo_actual?: number;
+  net_cash?: number | null;
 }
 
 interface KPIs {
@@ -165,10 +166,15 @@ export default function Trading() {
   const [displayCurrency, setDisplayCurrency] = useState<"USD" | "EUR">("USD");
   const [selectedAccount, setSelectedAccount] = useState<AccountId>(DEFAULT_ACCOUNT);
   const [positionsRefreshTrigger, setPositionsRefreshTrigger] = useState(0);
+  const [metadataStartingCash, setMetadataStartingCash] = useState<number | null>(null);
+  const [metadataEndingCash, setMetadataEndingCash] = useState<number | null>(null);
   const pageSize = 20;
 
-  // Get initial balance for the selected account
+  // Get initial balance: prefer metadata startingCash, fallback to config
   const getInitialBalance = () => {
+    if (metadataStartingCash !== null && selectedAccount !== "ALL") {
+      return metadataStartingCash;
+    }
     if (selectedAccount === "ALL") {
       return ACCOUNT_CONFIG["U22563190"].initialBalance + ACCOUNT_CONFIG["TSC"].initialBalance;
     }
@@ -184,9 +190,29 @@ export default function Trading() {
   // Asset aliases hook
   const { aliases, getAliasForSymbol, upsertAlias, deleteAlias } = useAssetAliases();
 
-  // Fetch trades when account changes
+  // Fetch metadata (startingCash, endingCash) from ib_sync_metadata
+  const fetchMetadata = async () => {
+    if (selectedAccount === "ALL") {
+      setMetadataStartingCash(null);
+      setMetadataEndingCash(null);
+      return;
+    }
+    const accountId = selectedAccount === "U22563190" ? "U22563190" : "TSC";
+    const { data } = await supabase
+      .from("ib_sync_metadata")
+      .select("starting_cash, ending_cash")
+      .eq("account_id", accountId)
+      .maybeSingle();
+    if (data) {
+      setMetadataStartingCash(data.starting_cash ? Number(data.starting_cash) : null);
+      setMetadataEndingCash(data.ending_cash ? Number(data.ending_cash) : null);
+    }
+  };
+
+  // Fetch trades and metadata when account changes
   useEffect(() => {
     fetchTrades();
+    fetchMetadata();
   }, [selectedAccount]);
 
   // Countdown timer for cooldown
@@ -267,6 +293,7 @@ export default function Trading() {
       }
 
       await fetchTrades();
+      await fetchMetadata();
       setPositionsRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error("Error syncing trades:", error);
@@ -550,7 +577,7 @@ export default function Trading() {
     }));
   }, [filteredByExclusions, trades, displayCurrency, convertToEur]);
 
-  // Compute client-side running balance for each trade (by id) using PnL + commission
+  // Compute client-side running balance: startingCash + cumulative netCash (or pnl-commission if netCash=0)
   const computedBalanceMap = useMemo(() => {
     const map: Record<string, number> = {};
     const sorted = [...trades].sort((a, b) => {
@@ -560,11 +587,16 @@ export default function Trading() {
     });
     let bal = getInitialBalance();
     for (const t of sorted) {
-      bal += (t.realized_pnl || 0) - (t.commission || 0);
+      const netCash = (t as any).net_cash;
+      if (netCash && netCash !== 0) {
+        bal += Number(netCash);
+      } else {
+        bal += (t.realized_pnl || 0) - (t.commission || 0);
+      }
       map[t.id] = bal;
     }
     return map;
-  }, [trades]);
+  }, [trades, metadataStartingCash]);
 
   // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
