@@ -380,11 +380,7 @@ export default function Trading() {
       for (const trade of allSortedTrades) {
         const tradeDate = new Date(trade.date_time);
         if (tradeDate >= firstFilteredDate) break;
-        if (trade.saldo_actual && trade.saldo_actual > 0) {
-          periodStartBalance = trade.saldo_actual;
-        } else {
-          periodStartBalance += (trade.realized_pnl || 0);
-        }
+        periodStartBalance += (trade.realized_pnl || 0) - (trade.commission || 0);
       }
     }
 
@@ -432,18 +428,20 @@ export default function Trading() {
     const avgWin = wins.length > 0 ? wins.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / wins.length : 0;
     const avgLoss = losses.length > 0 ? Math.abs(losses.reduce((sum, t) => sum + (t.realized_pnl || 0), 0) / losses.length) : 0;
 
-    const tradesWithPnL = trades.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
-    const sortedTradesWithPnL = [...tradesWithPnL].sort((a, b) => 
-      new Date(b.date_time).getTime() - new Date(a.date_time).getTime()
-    );
-    
-    const latestTradeWithPnL = sortedTradesWithPnL[0];
+    // Calculate running balance from PnL (not from stored saldo_actual which may be stale)
     const initialBalance = getInitialBalance();
-    const currentBalance = latestTradeWithPnL?.saldo_actual ?? initialBalance;
+    const allTotalPnL = trades
+      .filter(t => t.realized_pnl !== null && t.realized_pnl !== 0)
+      .reduce((sum, t) => sum + (t.realized_pnl || 0), 0);
+    const allTotalCommission = trades.reduce((sum, t) => sum + (t.commission || 0), 0);
     
-    const returnPercent = ((currentBalance - initialBalance) / initialBalance) * 100;
+    // currentBalance = startingCash + all realized PnL - all commissions
+    const currentBalance = initialBalance + allTotalPnL - allTotalCommission;
+    
+    // Return % based on starting cash
+    const returnPercent = initialBalance > 0 ? ((currentBalance - initialBalance) / initialBalance) * 100 : 0;
 
-    // Calculate period start balance for filtered trades
+    // Period start balance for filtered trades
     const sortedFilteredTrades = [...filteredByExclusions].sort((a, b) => 
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
@@ -452,17 +450,13 @@ export default function Trading() {
       new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
     );
     
-    let periodStartBalance = getInitialBalance();
+    let periodStartBalance = initialBalance;
     if (sortedFilteredTrades.length > 0) {
       const firstFilteredDate = new Date(sortedFilteredTrades[0].date_time);
       for (const trade of allSortedTrades) {
         const tradeDate = new Date(trade.date_time);
         if (tradeDate >= firstFilteredDate) break;
-        if (trade.saldo_actual && trade.saldo_actual > 0) {
-          periodStartBalance = trade.saldo_actual;
-        } else {
-          periodStartBalance += (trade.realized_pnl || 0);
-        }
+        periodStartBalance += (trade.realized_pnl || 0) - (trade.commission || 0);
       }
     }
     
@@ -470,23 +464,15 @@ export default function Trading() {
       ? (totalPnL / periodStartBalance) * 100 
       : 0;
 
-    const sortedForDrawdown = [...trades].sort((a, b) => 
-      new Date(a.date_time).getTime() - new Date(b.date_time).getTime()
-    );
-    
-    let runningBalance = getInitialBalance();
-    let peak = getInitialBalance();
+    // Max Drawdown calculated from PnL-based running balance
+    let runningBal = initialBalance;
+    let peak = initialBalance;
     let maxDrawdown = 0;
     
-    for (const trade of sortedForDrawdown) {
-      if (trade.saldo_actual && trade.saldo_actual > 0) {
-        runningBalance = trade.saldo_actual;
-      } else {
-        runningBalance += (trade.realized_pnl || 0);
-      }
-      
-      if (runningBalance > peak) peak = runningBalance;
-      const drawdown = peak - runningBalance;
+    for (const trade of allSortedTrades) {
+      runningBal += (trade.realized_pnl || 0) - (trade.commission || 0);
+      if (runningBal > peak) peak = runningBal;
+      const drawdown = peak - runningBal;
       if (drawdown > maxDrawdown) maxDrawdown = drawdown;
     }
 
@@ -537,18 +523,14 @@ export default function Trading() {
     for (const trade of allSortedTrades) {
       const tradeDate = new Date(trade.date_time);
       if (tradeDate >= firstFilteredDate) break;
-      if (trade.saldo_actual && trade.saldo_actual > 0) {
-        startingBalance = trade.saldo_actual;
-      } else {
-        startingBalance += (trade.realized_pnl || 0);
-      }
+      startingBalance += (trade.realized_pnl || 0) - (trade.commission || 0);
     }
     
     let cumBalance = startingBalance;
     
     sortedTrades.forEach(trade => {
       const dateKey = format(parseISO(trade.date_time), "dd/MM");
-      const pnl = trade.realized_pnl || 0;
+      const pnl = (trade.realized_pnl || 0) - (trade.commission || 0);
       cumBalance += pnl;
       
       if (!dailyData[dateKey]) {
@@ -567,6 +549,22 @@ export default function Trading() {
       dailyPnL: displayCurrency === "EUR" ? convertToEur(data.dailyPnL) : data.dailyPnL,
     }));
   }, [filteredByExclusions, trades, displayCurrency, convertToEur]);
+
+  // Compute client-side running balance for each trade (by id) using PnL + commission
+  const computedBalanceMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const sorted = [...trades].sort((a, b) => {
+      const dateCmp = new Date(a.date_time).getTime() - new Date(b.date_time).getTime();
+      if (dateCmp !== 0) return dateCmp;
+      return (parseInt(a.ib_trade_id) || 0) - (parseInt(b.ib_trade_id) || 0);
+    });
+    let bal = getInitialBalance();
+    for (const t of sorted) {
+      bal += (t.realized_pnl || 0) - (t.commission || 0);
+      map[t.id] = bal;
+    }
+    return map;
+  }, [trades]);
 
   // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
@@ -751,7 +749,6 @@ export default function Trading() {
         <NavSummaryCards
           formatCurrency={formatCurrency}
           refreshTrigger={positionsRefreshTrigger}
-          trades={rawTrades.map(t => ({ symbol: t.symbol, quantity: t.quantity, price: t.price, date_time: t.date_time, side: t.side }))}
         />
 
         {/* Main Metrics Row */}
@@ -1050,7 +1047,7 @@ export default function Trading() {
                         )}
                         {isColumnVisible("saldo_actual") && (
                           <TableCell className="text-right">
-                            {formatCurrency(trade.saldo_actual || 0)}
+                            {formatCurrency(computedBalanceMap[trade.id] || 0)}
                           </TableCell>
                         )}
                         {isColumnVisible("trade_duration") && (
