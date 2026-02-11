@@ -49,6 +49,7 @@ import { AliasManagerModal } from "@/components/trading/AliasManagerModal";
 import { InlineAliasEditor } from "@/components/trading/InlineAliasEditor";
 import { TradingChatbot } from "@/components/trading/TradingChatbot";
 import { OpenPositionsTable } from "@/components/trading/OpenPositionsTable";
+import { NavSummaryCards } from "@/components/trading/NavSummaryCards";
 import { DateRange } from "react-day-picker";
 
 type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
@@ -104,7 +105,7 @@ const ACCOUNT_CONFIG: Record<Exclude<AccountId, "ALL">, AccountConfig> = {
   },
   "TSC": {
     name: "TSC",
-    initialBalance: 599746.01,
+    initialBalance: 414594.50,
     table: "ib_trades_tsc",
     syncFunction: "sync-ibkr-trades-tsc",
     excludeBefore: new Date("2025-01-15"),
@@ -746,12 +747,20 @@ export default function Trading() {
           />
         </div>
 
+        {/* NAV Summary Cards */}
+        <NavSummaryCards
+          cashBalance={kpis.currentBalance}
+          formatCurrency={formatCurrency}
+          refreshTrigger={positionsRefreshTrigger}
+          trades={rawTrades.map(t => ({ symbol: t.symbol, quantity: t.side === "BUY" ? t.quantity : -t.quantity, price: t.price, date_time: t.date_time }))}
+        />
+
         {/* Main Metrics Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           {/* Current Balance Card */}
           <Card className="sm:col-span-1">
             <CardContent className="pt-4 sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo Actual</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo Efectivo</p>
               <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(kpis.currentBalance)}</p>
               <p className={`text-sm mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
                 {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% desde inicio
