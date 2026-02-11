@@ -307,11 +307,17 @@ serve(async (req) => {
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    // Calculate saldo using netCash: Saldo = Previous + netCash
+    // Calculate saldo iteratively: Saldo = Previous + fifoPnlRealized + ibCommission
+    // ibCommission from IBKR is already negative, so we add algebraically
     let runningBalance = INITIAL_BALANCE;
     
     const records = tradesToProcess.map(trade => {
-      runningBalance += (trade.netCash || 0);
+      // Use netCash if available, otherwise fall back to pnl + commission
+      if (trade.netCash !== 0) {
+        runningBalance += trade.netCash;
+      } else {
+        runningBalance += (trade.fifoPnlRealized || 0) + (trade.ibCommission || 0);
+      }
       return {
         ib_trade_id: trade.tradeID,
         symbol: trade.symbol,
@@ -382,6 +388,24 @@ serve(async (req) => {
       }
     }
 
+    // Save sync metadata (startingCash, endingCash) for UI consumption
+    if (startingCash !== null || endingCash !== null) {
+      const { error: metaError } = await supabase
+        .from('ib_sync_metadata')
+        .upsert({
+          account_id: 'TSC',
+          starting_cash: startingCash ?? INITIAL_BALANCE,
+          ending_cash: endingCash ?? runningBalance,
+          synced_at: new Date().toISOString(),
+        }, { onConflict: 'account_id' });
+      
+      if (metaError) {
+        console.error('Metadata save error:', metaError);
+      } else {
+        console.log(`💾 Saved sync metadata: startingCash=${startingCash}, endingCash=${endingCash}`);
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true, 
@@ -391,6 +415,7 @@ serve(async (req) => {
         lastCashBalance: runningBalance,
         initialCashBalance: INITIAL_BALANCE,
         expectedEndingCash: endingCash,
+        startingCash,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

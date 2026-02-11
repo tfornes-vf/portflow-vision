@@ -260,6 +260,30 @@ export type Database = {
         }
         Relationships: []
       }
+      ib_sync_metadata: {
+        Row: {
+          account_id: string
+          ending_cash: number | null
+          id: string
+          starting_cash: number | null
+          synced_at: string
+        }
+        Insert: {
+          account_id?: string
+          ending_cash?: number | null
+          id?: string
+          starting_cash?: number | null
+          synced_at?: string
+        }
+        Update: {
+          account_id?: string
+          ending_cash?: number | null
+          id?: string
+          starting_cash?: number | null
+          synced_at?: string
+        }
+        Relationships: []
+      }
       ib_trades: {
         Row: {
           account_id: string

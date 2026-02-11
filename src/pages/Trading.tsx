@@ -749,21 +749,20 @@ export default function Trading() {
 
         {/* NAV Summary Cards */}
         <NavSummaryCards
-          cashBalance={kpis.currentBalance}
           formatCurrency={formatCurrency}
           refreshTrigger={positionsRefreshTrigger}
-          trades={rawTrades.map(t => ({ symbol: t.symbol, quantity: t.side === "BUY" ? t.quantity : -t.quantity, price: t.price, date_time: t.date_time }))}
+          trades={rawTrades.map(t => ({ symbol: t.symbol, quantity: t.quantity, price: t.price, date_time: t.date_time, side: t.side }))}
         />
 
         {/* Main Metrics Row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-          {/* Current Balance Card */}
+          {/* Current PnL Balance Card */}
           <Card className="sm:col-span-1">
             <CardContent className="pt-4 sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo Efectivo</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo P&L Acumulado</p>
               <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(kpis.currentBalance)}</p>
               <p className={`text-sm mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% desde inicio
+                {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% sobre cash inicial
               </p>
             </CardContent>
           </Card>
