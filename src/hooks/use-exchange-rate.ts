@@ -34,5 +34,9 @@ export function useExchangeRate() {
     return usdAmount * rate;
   };
 
-  return { rate, loading, convertToEur };
+  const convertToUsd = (eurAmount: number): number => {
+    return rate > 0 ? eurAmount / rate : eurAmount;
+  };
+
+  return { rate, loading, convertToEur, convertToUsd };
 }
