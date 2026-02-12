@@ -32,7 +32,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts";
-import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon, Settings } from "lucide-react";
+import { RefreshCw, Search, TrendingUp, TrendingDown, Activity, Target, BarChart3, Percent, CalendarIcon, Settings, Globe } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import { format, subDays, subWeeks, subMonths, startOfYear, parseISO, isAfter, isBefore, startOfDay, endOfDay, isSameDay } from "date-fns";
@@ -53,6 +53,35 @@ import { NavSummaryCards } from "@/components/trading/NavSummaryCards";
 import { DateRange } from "react-day-picker";
 
 type Period = "T" | "1D" | "1W" | "1M" | "YTD" | "ALL" | "CUSTOM";
+
+type TimezoneOption = "America/New_York" | "Europe/Madrid" | "Europe/London" | "UTC";
+
+const TIMEZONE_LABELS: Record<TimezoneOption, string> = {
+  "America/New_York": "Nueva York (ET)",
+  "Europe/Madrid": "España (CET)",
+  "Europe/London": "Londres (GMT)",
+  "UTC": "UTC",
+};
+
+/** Convert a date_time string (assumed NY time) to the target timezone for display */
+function formatInTimezone(dateStr: string, tz: TimezoneOption, fmt: string): string {
+  // The date_time from IBKR is in America/New_York.
+  // We parse it as-is (UTC by parseISO), then adjust.
+  const parsed = parseISO(dateStr);
+  // Use Intl to format in the target timezone
+  const options: Intl.DateTimeFormatOptions = {
+    timeZone: tz,
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  };
+  // For short formats, use custom formatting
+  if (fmt === "dd/MM/yyyy HH:mm") {
+    const parts = new Intl.DateTimeFormat("es-ES", options).formatToParts(parsed);
+    const get = (type: string) => parts.find(p => p.type === type)?.value || "";
+    return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
+  }
+  return new Intl.DateTimeFormat("es-ES", options).format(parsed);
+}
 
 interface RawTrade {
   id: string;
@@ -168,6 +197,7 @@ export default function Trading() {
   const [positionsRefreshTrigger, setPositionsRefreshTrigger] = useState(0);
   const [metadataStartingCash, setMetadataStartingCash] = useState<number | null>(null);
   const [metadataEndingCash, setMetadataEndingCash] = useState<number | null>(null);
+  const [timezone, setTimezone] = useState<TimezoneOption>("Europe/Madrid");
   const pageSize = 20;
 
   // Get initial balance: prefer metadata startingCash, fallback to config
@@ -768,6 +798,19 @@ export default function Trading() {
             exchangeRate={exchangeRate}
           />
 
+          {/* Timezone Selector */}
+          <Select value={timezone} onValueChange={(v) => setTimezone(v as TimezoneOption)}>
+            <SelectTrigger className="w-[160px] text-xs sm:text-sm">
+              <Globe className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.entries(TIMEZONE_LABELS) as [TimezoneOption, string][]).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {/* Exclusion Filter */}
           <ExclusionFilter
             exclusions={exclusions}
@@ -1028,7 +1071,7 @@ export default function Trading() {
                       <TableRow key={trade.id}>
                         {isColumnVisible("date_time") && (
                           <TableCell className="text-sm whitespace-nowrap">
-                            {format(parseISO(trade.date_time), "dd/MM/yyyy HH:mm")}
+                            {formatInTimezone(trade.date_time, timezone, "dd/MM/yyyy HH:mm")}
                           </TableCell>
                         )}
                         {isColumnVisible("symbol") && (
@@ -1155,7 +1198,7 @@ export default function Trading() {
           recentTrades: searchedTrades.slice(0, 20).map(t => ({
             symbol: t.symbol,
             pnl: t.realized_pnl || 0,
-            date: format(parseISO(t.date_time), "dd/MM/yyyy HH:mm"),
+            date: formatInTimezone(t.date_time, timezone, "dd/MM/yyyy HH:mm"),
             action: t.action || t.side,
           })),
         }}
