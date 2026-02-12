@@ -9,32 +9,37 @@ interface NavSummaryCardsProps {
 }
 
 export function NavSummaryCards({ formatCurrency, refreshTrigger }: NavSummaryCardsProps) {
-  const [endingCash, setEndingCash] = useState<number>(0);
-  const [assetsValue, setAssetsValue] = useState<number>(0);
+  const [cash, setCash] = useState<number>(0);
+  const [stock, setStock] = useState<number>(0);
+  const [total, setTotal] = useState<number>(0);
 
   useEffect(() => {
-    fetchData();
+    fetchNavData();
   }, [refreshTrigger]);
 
-  const fetchData = async () => {
-    const [metaResult, posResult] = await Promise.all([
-      supabase.from("ib_sync_metadata").select("ending_cash").eq("account_id", "TSC").maybeSingle(),
-      supabase.from("ib_open_positions_tsc").select("market_value"),
-    ]);
+  const fetchNavData = async () => {
+    // Get the most recent NAV snapshot from ib_nav_history
+    const { data, error } = await supabase
+      .from("ib_nav_history")
+      .select("total, cash, stock")
+      .eq("account_id", "TSC")
+      .order("report_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-    if (metaResult.data?.ending_cash) {
-      setEndingCash(Number(metaResult.data.ending_cash));
+    if (error) {
+      console.error("Error fetching NAV data:", error);
+      return;
     }
 
-    if (posResult.data && posResult.data.length > 0) {
-      const total = posResult.data.reduce((sum, p) => sum + Math.abs(Number(p.market_value)), 0);
-      setAssetsValue(total);
+    if (data) {
+      setCash(Number(data.cash));
+      setStock(Number(data.stock));
+      setTotal(Number(data.total));
     }
   };
 
-  const totalNav = endingCash + assetsValue;
-
-  if (endingCash === 0 && assetsValue === 0) return null;
+  if (cash === 0 && stock === 0 && total === 0) return null;
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -44,7 +49,7 @@ export function NavSummaryCards({ formatCurrency, refreshTrigger }: NavSummaryCa
             <Wallet className="h-4 w-4 text-muted-foreground" />
             <span className="text-xs sm:text-sm text-muted-foreground">Efectivo (Cash)</span>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-foreground">{formatCurrency(endingCash)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground">{formatCurrency(cash)}</p>
         </CardContent>
       </Card>
 
@@ -54,7 +59,7 @@ export function NavSummaryCards({ formatCurrency, refreshTrigger }: NavSummaryCa
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
             <span className="text-xs sm:text-sm text-muted-foreground">Valor Activos</span>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-foreground">{formatCurrency(assetsValue)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground">{formatCurrency(stock)}</p>
         </CardContent>
       </Card>
 
@@ -64,7 +69,7 @@ export function NavSummaryCards({ formatCurrency, refreshTrigger }: NavSummaryCa
             <Landmark className="h-4 w-4 text-muted-foreground" />
             <span className="text-xs sm:text-sm text-muted-foreground">Patrimonio Total (NAV)</span>
           </div>
-          <p className="text-xl sm:text-2xl font-bold text-foreground">{formatCurrency(totalNav)}</p>
+          <p className="text-xl sm:text-2xl font-bold text-foreground">{formatCurrency(total)}</p>
         </CardContent>
       </Card>
     </div>

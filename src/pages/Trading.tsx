@@ -201,6 +201,7 @@ export default function Trading() {
   const [metadataStartingCash, setMetadataStartingCash] = useState<number | null>(null);
   const [metadataEndingCash, setMetadataEndingCash] = useState<number | null>(null);
   const [timezone, setTimezone] = useState<TimezoneOption>("Europe/Madrid");
+  const [navHistory, setNavHistory] = useState<{ report_date: string; total: number; cash: number; stock: number }[]>([]);
   const pageSize = 20;
 
   // Get initial balance: prefer metadata startingCash, fallback to config
@@ -242,10 +243,21 @@ export default function Trading() {
     }
   };
 
+  // Fetch NAV history
+  const fetchNavHistory = async () => {
+    const { data } = await supabase
+      .from("ib_nav_history")
+      .select("report_date, total, cash, stock")
+      .eq("account_id", selectedAccount === "ALL" ? "TSC" : (selectedAccount === "U22563190" ? "U22563190" : "TSC"))
+      .order("report_date", { ascending: true });
+    setNavHistory(data || []);
+  };
+
   // Fetch trades and metadata when account changes
   useEffect(() => {
     fetchTrades();
     fetchMetadata();
+    fetchNavHistory();
   }, [selectedAccount]);
 
   // Countdown timer for cooldown
@@ -327,6 +339,7 @@ export default function Trading() {
 
       await fetchTrades();
       await fetchMetadata();
+      await fetchNavHistory();
       setPositionsRefreshTrigger(prev => prev + 1);
     } catch (error) {
       console.error("Error syncing trades:", error);
@@ -565,7 +578,33 @@ export default function Trading() {
     };
   }, [filteredByExclusions, trades]);
 
+  // Chart data: prefer NAV history from ib_nav_history; fallback to trade-based calculation
   const chartData = useMemo(() => {
+    if (navHistory.length > 0) {
+      // Use NAV time series directly
+      const { start, end } = getFilterDates(selectedPeriod);
+      let filtered = navHistory;
+      if (start) {
+        filtered = filtered.filter(n => {
+          const d = new Date(n.report_date);
+          const afterStart = d >= startOfDay(start);
+          const beforeEnd = !end || d <= endOfDay(end);
+          return afterStart && beforeEnd;
+        });
+      }
+      const firstTotal = filtered.length > 0 ? filtered[0].total : 0;
+      return filtered.map(n => {
+        const total = Number(n.total);
+        return {
+          date: format(new Date(n.report_date), "dd/MM"),
+          balance: displayCurrency === "EUR" ? convertToEur(total) : total,
+          pnl: displayCurrency === "EUR" ? convertToEur(total - firstTotal) : (total - firstTotal),
+          dailyPnL: 0,
+        };
+      });
+    }
+
+    // Fallback: calculate from trades
     const sortedTrades = [...filteredByExclusions]
       .sort((a, b) => new Date(a.date_time).getTime() - new Date(b.date_time).getTime());
 
@@ -608,7 +647,7 @@ export default function Trading() {
       pnl: displayCurrency === "EUR" ? convertToEur(data.pnl) : data.pnl,
       dailyPnL: displayCurrency === "EUR" ? convertToEur(data.dailyPnL) : data.dailyPnL,
     }));
-  }, [filteredByExclusions, trades, displayCurrency, convertToEur]);
+  }, [filteredByExclusions, trades, displayCurrency, convertToEur, navHistory, selectedPeriod]);
 
   // Compute client-side running balance: startingCash + cumulative netCash (or pnl-commission if netCash=0)
   const computedBalanceMap = useMemo(() => {

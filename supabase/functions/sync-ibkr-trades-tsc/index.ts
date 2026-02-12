@@ -31,8 +31,12 @@ interface IBKROpenPosition {
   accountId: string;
 }
 
-// Default initial balance
-const DEFAULT_INITIAL_BALANCE = 414594.50;
+interface NavDataPoint {
+  reportDate: string; // YYYYMMDD
+  total: number;
+  cash: number;
+  stock: number;
+}
 
 // Exclude trades before this date for TSC account
 const EXCLUDE_BEFORE = new Date("2025-01-15T00:00:00Z");
@@ -64,43 +68,67 @@ function parseIBKRDate(dateStr: string): string {
   return new Date().toISOString();
 }
 
-// Extract startingCash from CashReportCurrency where currency="BASE_SUMMARY"
-function extractStartingCash(xml: string): number | null {
-  const regex = /<CashReportCurrency[^>]*?\scurrency\s*=\s*"BASE_SUMMARY"[^>]*?\sstartingCash\s*=\s*"([^"]*)"[^>]*?\/>/gi;
-  let match;
-  while ((match = regex.exec(xml)) !== null) {
-    const val = parseFloat(match[1]);
-    if (!isNaN(val)) {
-      console.log(`📊 Extracted startingCash (BASE_SUMMARY): ${val}`);
-      return val;
-    }
-  }
-  // Try reversed attribute order
-  const regex2 = /<CashReportCurrency[^>]*?\sstartingCash\s*=\s*"([^"]*)"[^>]*?\scurrency\s*=\s*"BASE_SUMMARY"[^>]*?\/>/gi;
-  while ((match = regex2.exec(xml)) !== null) {
-    const val = parseFloat(match[1]);
-    if (!isNaN(val)) {
-      console.log(`📊 Extracted startingCash (BASE_SUMMARY, alt): ${val}`);
-      return val;
-    }
-  }
-  return null;
+// Parse reportDate "YYYYMMDD" -> "YYYY-MM-DD"
+function parseReportDate(dateStr: string): string {
+  const m = dateStr.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return dateStr;
 }
 
-// Extract endingCash for verification
-function extractEndingCash(xml: string): number | null {
-  const regex = /<CashReportCurrency[^>]*?\scurrency\s*=\s*"BASE_SUMMARY"[^>]*?\sendingCash\s*=\s*"([^"]*)"[^>]*?\/>/gi;
+// Extract NetAssetValueInBase nodes from XML
+function parseNavData(xml: string): NavDataPoint[] {
+  const results: NavDataPoint[] = [];
+  const regex = /<EquitySummaryByReportDateInBase\s+([^>]*?)\s*\/>/gs;
   let match;
+
   while ((match = regex.exec(xml)) !== null) {
-    const val = parseFloat(match[1]);
-    if (!isNaN(val)) return val;
+    const attrs = match[1];
+    const getAttr = (name: string): string => {
+      const attrMatch = attrs.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
+      return attrMatch ? attrMatch[1] : "";
+    };
+
+    const reportDate = getAttr('reportDate');
+    const totalStr = getAttr('total');
+    const cashStr = getAttr('cash');
+    const stockStr = getAttr('stock');
+
+    if (reportDate && totalStr) {
+      results.push({
+        reportDate,
+        total: parseFloat(totalStr) || 0,
+        cash: parseFloat(cashStr) || 0,
+        stock: parseFloat(stockStr) || 0,
+      });
+    }
   }
-  const regex2 = /<CashReportCurrency[^>]*?\sendingCash\s*=\s*"([^"]*)"[^>]*?\scurrency\s*=\s*"BASE_SUMMARY"[^>]*?\/>/gi;
+
+  // Also try EquitySummaryInBase (alternative node name in some Flex queries)
+  const regex2 = /<EquitySummaryInBase\s+([^>]*?)\s*\/>/gs;
   while ((match = regex2.exec(xml)) !== null) {
-    const val = parseFloat(match[1]);
-    if (!isNaN(val)) return val;
+    const attrs = match[1];
+    const getAttr = (name: string): string => {
+      const attrMatch = attrs.match(new RegExp(`${name}\\s*=\\s*"([^"]*)"`, 'i'));
+      return attrMatch ? attrMatch[1] : "";
+    };
+
+    const reportDate = getAttr('reportDate');
+    const totalStr = getAttr('total');
+    if (reportDate && totalStr && !results.find(r => r.reportDate === reportDate)) {
+      results.push({
+        reportDate,
+        total: parseFloat(totalStr) || 0,
+        cash: parseFloat(getAttr('cash')) || 0,
+        stock: parseFloat(getAttr('stock')) || 0,
+      });
+    }
   }
-  return null;
+
+  console.log(`📊 Parsed ${results.length} NAV data points`);
+  if (results.length > 0) {
+    console.log(`📊 NAV sample:`, JSON.stringify(results[0]));
+  }
+  return results;
 }
 
 // Parse OpenPosition nodes from XML
@@ -142,8 +170,7 @@ function parseOpenPositions(xml: string): IBKROpenPosition[] {
 async function fetchFlexReport(token: string, queryId: string, reportType: string): Promise<{
   trades: IBKRTrade[];
   openPositions: IBKROpenPosition[];
-  startingCash: number | null;
-  endingCash: number | null;
+  navData: NavDataPoint[];
   rawXml: string;
 }> {
   console.log(`⏳ Downloading ${reportType} (ID: ${queryId})...`);
@@ -156,7 +183,7 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     const refCodeMatch = requestText.match(/<ReferenceCode>(\d+)<\/ReferenceCode>/);
     if (!refCodeMatch) {
       console.error(`Failed to get reference code for ${reportType}:`, requestText);
-      return { trades: [], openPositions: [], startingCash: null, endingCash: null, rawXml: "" };
+      return { trades: [], openPositions: [], navData: [], rawXml: "" };
     }
     
     const referenceCode = refCodeMatch[1];
@@ -184,10 +211,8 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     
     console.log(`📄 XML preview (${reportType}):`, reportXml.substring(0, 500));
     
-    // Extract cash balances
-    const startingCash = extractStartingCash(reportXml);
-    const endingCash = extractEndingCash(reportXml);
-    console.log(`💰 startingCash: ${startingCash}, endingCash: ${endingCash}`);
+    // Parse NAV data from EquitySummaryByReportDateInBase
+    const navData = parseNavData(reportXml);
     
     // Parse open positions
     const openPositions = parseOpenPositions(reportXml);
@@ -195,7 +220,7 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     // Parse trades
     if (!reportXml.includes("Trade")) {
       console.log(`No trades found in ${reportType}`);
-      return { trades: [], openPositions, startingCash, endingCash, rawXml: reportXml };
+      return { trades: [], openPositions, navData, rawXml: reportXml };
     }
     
     const trades: IBKRTrade[] = [];
@@ -237,11 +262,11 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     if (trades.length > 0) {
       console.log(`📊 First trade sample:`, JSON.stringify(trades[0]));
     }
-    return { trades, openPositions, startingCash, endingCash, rawXml: reportXml };
+    return { trades, openPositions, navData, rawXml: reportXml };
     
   } catch (error) {
     console.error(`⚠️ Error downloading ${reportType}:`, error);
-    return { trades: [], openPositions: [], startingCash: null, endingCash: null, rawXml: "" };
+    return { trades: [], openPositions: [], navData: [], rawXml: "" };
   }
 }
 
@@ -264,12 +289,49 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { trades, openPositions, startingCash, endingCash } = await fetchFlexReport(IBKR_TOKEN, QUERY_ID, "TSC Report");
+    const { trades, openPositions, navData } = await fetchFlexReport(IBKR_TOKEN, QUERY_ID, "TSC Report");
 
-    // Use startingCash from XML CashReportCurrency BASE_SUMMARY, otherwise default
-    const INITIAL_BALANCE = startingCash ?? DEFAULT_INITIAL_BALANCE;
-    console.log(`📊 Using initial cash balance: ${INITIAL_BALANCE} (from ${startingCash !== null ? 'XML CashReport' : 'default'})`);
+    // ── NAV History ──────────────────────────────────────────────────
+    let latestNav: NavDataPoint | null = null;
+    if (navData.length > 0) {
+      // Sort by reportDate ascending
+      navData.sort((a, b) => a.reportDate.localeCompare(b.reportDate));
+      latestNav = navData[navData.length - 1];
 
+      const navRecords = navData.map(n => ({
+        account_id: 'TSC',
+        report_date: parseReportDate(n.reportDate),
+        total: n.total,
+        cash: n.cash,
+        stock: n.stock,
+      }));
+
+      const { error: navError } = await supabase
+        .from('ib_nav_history')
+        .upsert(navRecords, { onConflict: 'account_id,report_date' });
+
+      if (navError) {
+        console.error('NAV history upsert error:', navError);
+      } else {
+        console.log(`📈 Upserted ${navRecords.length} NAV history records`);
+      }
+
+      // Update sync metadata with latest NAV cash values
+      const { error: metaError } = await supabase
+        .from('ib_sync_metadata')
+        .upsert({
+          account_id: 'TSC',
+          starting_cash: navData[0].cash,
+          ending_cash: latestNav.cash,
+          synced_at: new Date().toISOString(),
+        }, { onConflict: 'account_id' });
+
+      if (metaError) {
+        console.error('Metadata save error:', metaError);
+      }
+    }
+
+    // ── Trades ────────────────────────────────────────────────────────
     // Deduplicate by tradeID, preferring trades with P&L data
     const uniqueTrades = new Map<string, IBKRTrade>();
     for (const trade of trades) {
@@ -291,7 +353,7 @@ serve(async (req) => {
     
     console.log(`⚗️ Total unique trades after date filter: ${tradesToProcess.length}`);
 
-    // Sort trades by dateTime + tradeID ascending (deterministic ordering)
+    // Sort trades by dateTime + tradeID ascending
     tradesToProcess.sort((a, b) => {
       const dateA = parseIBKRDate(a.dateTime);
       const dateB = parseIBKRDate(b.dateTime);
@@ -307,40 +369,23 @@ serve(async (req) => {
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    // Calculate saldo iteratively: Saldo = Previous + fifoPnlRealized + ibCommission
-    // ibCommission from IBKR is already negative, so we add algebraically
-    let runningBalance = INITIAL_BALANCE;
-    
-    const records = tradesToProcess.map(trade => {
-      // Use netCash if available, otherwise fall back to pnl + commission
-      if (trade.netCash !== 0) {
-        runningBalance += trade.netCash;
-      } else {
-        runningBalance += (trade.fifoPnlRealized || 0) + (trade.ibCommission || 0);
-      }
-      return {
-        ib_trade_id: trade.tradeID,
-        symbol: trade.symbol,
-        asset_class: 'STK',
-        date_time: parseIBKRDate(trade.dateTime),
-        side: trade.buySell,
-        quantity: Math.abs(trade.quantity),
-        price: trade.tradePrice,
-        amount: calculateNetAmount(trade),
-        commission: Math.abs(trade.ibCommission),
-        currency: 'USD',
-        realized_pnl: trade.fifoPnlRealized,
-        account_id: trade.accountId || 'TSC',
-        saldo_actual: runningBalance,
-        net_cash: trade.netCash || 0,
-      };
-    });
-
-    // Verify against endingCash
-    if (endingCash !== null) {
-      const diff = Math.abs(runningBalance - endingCash);
-      console.log(`✅ Final balance: ${runningBalance}, Expected endingCash: ${endingCash}, Diff: ${diff.toFixed(2)}`);
-    }
+    // Net realized PnL = fifoPnlRealized + ibCommission (commission is already negative)
+    const records = tradesToProcess.map(trade => ({
+      ib_trade_id: trade.tradeID,
+      symbol: trade.symbol,
+      asset_class: 'STK',
+      date_time: parseIBKRDate(trade.dateTime),
+      side: trade.buySell,
+      quantity: Math.abs(trade.quantity),
+      price: trade.tradePrice,
+      amount: calculateNetAmount(trade),
+      commission: Math.abs(trade.ibCommission),
+      currency: 'USD',
+      realized_pnl: trade.fifoPnlRealized + trade.ibCommission, // Net P&L after commission
+      account_id: trade.accountId || 'TSC',
+      saldo_actual: 0, // No longer calculated here; NAV comes from ib_nav_history
+      net_cash: trade.netCash || 0,
+    }));
 
     // Upsert trades
     let tradesCount = 0;
@@ -358,11 +403,12 @@ serve(async (req) => {
       console.log(`🎉 Synced ${tradesCount} TSC trades`);
     }
 
-    // Upsert open positions (clear old ones first, then insert new)
+    // ── Open Positions ───────────────────────────────────────────────
     let positionsCount = 0;
-    if (openPositions.length > 0) {
-      await supabase.from('ib_open_positions_tsc').delete().eq('account_id', 'TSC');
+    // Always clear old positions first
+    await supabase.from('ib_open_positions_tsc').delete().eq('account_id', 'TSC');
 
+    if (openPositions.length > 0) {
       const posRecords = openPositions.map(pos => ({
         symbol: pos.symbol,
         quantity: pos.quantity,
@@ -388,34 +434,14 @@ serve(async (req) => {
       }
     }
 
-    // Save sync metadata (startingCash, endingCash) for UI consumption
-    if (startingCash !== null || endingCash !== null) {
-      const { error: metaError } = await supabase
-        .from('ib_sync_metadata')
-        .upsert({
-          account_id: 'TSC',
-          starting_cash: startingCash ?? INITIAL_BALANCE,
-          ending_cash: endingCash ?? runningBalance,
-          synced_at: new Date().toISOString(),
-        }, { onConflict: 'account_id' });
-      
-      if (metaError) {
-        console.error('Metadata save error:', metaError);
-      } else {
-        console.log(`💾 Saved sync metadata: startingCash=${startingCash}, endingCash=${endingCash}`);
-      }
-    }
-
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Synced ${tradesCount} trades, ${positionsCount} open positions`,
+        message: `Synced ${tradesCount} trades, ${positionsCount} positions, ${navData.length} NAV points`,
         count: tradesCount,
         positionsCount,
-        lastCashBalance: runningBalance,
-        initialCashBalance: INITIAL_BALANCE,
-        expectedEndingCash: endingCash,
-        startingCash,
+        navPointsCount: navData.length,
+        latestNav: latestNav ? { total: latestNav.total, cash: latestNav.cash, stock: latestNav.stock } : null,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

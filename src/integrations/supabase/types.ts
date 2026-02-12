@@ -215,6 +215,36 @@ export type Database = {
         }
         Relationships: []
       }
+      ib_nav_history: {
+        Row: {
+          account_id: string
+          cash: number
+          created_at: string
+          id: string
+          report_date: string
+          stock: number
+          total: number
+        }
+        Insert: {
+          account_id?: string
+          cash?: number
+          created_at?: string
+          id?: string
+          report_date: string
+          stock?: number
+          total?: number
+        }
+        Update: {
+          account_id?: string
+          cash?: number
+          created_at?: string
+          id?: string
+          report_date?: string
+          stock?: number
+          total?: number
+        }
+        Relationships: []
+      }
       ib_open_positions_tsc: {
         Row: {
           account_id: string
