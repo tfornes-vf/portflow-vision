@@ -195,7 +195,8 @@ export default function Trading() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
   const [exclusions, setExclusions] = useState<ExclusionRule[]>([]);
-  const [displayCurrency, setDisplayCurrency] = useState<"USD" | "EUR">("USD");
+  const [navCurrency, setNavCurrency] = useState<"USD" | "EUR">("EUR");
+  const [tradesCurrency, setTradesCurrency] = useState<"USD" | "EUR">("USD");
   const [selectedAccount, setSelectedAccount] = useState<AccountId>(DEFAULT_ACCOUNT);
   const [positionsRefreshTrigger, setPositionsRefreshTrigger] = useState(0);
   const [metadataStartingCash, setMetadataStartingCash] = useState<number | null>(null);
@@ -219,7 +220,7 @@ export default function Trading() {
   const trades = useTradeProcessing(rawTrades);
   
   // Exchange rate hook
-  const { rate: exchangeRate, convertToEur } = useExchangeRate();
+  const { rate: exchangeRate, convertToEur, convertToUsd } = useExchangeRate();
 
   // Asset aliases hook
   const { aliases, getAliasForSymbol, upsertAlias, deleteAlias } = useAssetAliases();
@@ -363,9 +364,17 @@ export default function Trading() {
     setColumns(cols => cols.map(c => c.key === key ? { ...c, visible } : c));
   };
 
-  // Currency formatting
-  const formatCurrency = (value: number) => {
-    if (displayCurrency === "EUR") {
+  // NAV formatting (values come in EUR from IBKR)
+  const formatNavCurrency = (value: number) => {
+    if (navCurrency === "USD") {
+      return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(convertToUsd(value));
+    }
+    return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+  };
+
+  // Trades formatting (values come in USD from IBKR)
+  const formatTradesCurrency = (value: number) => {
+    if (tradesCurrency === "EUR") {
       return new Intl.NumberFormat("es-ES", { style: "currency", currency: "EUR", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(convertToEur(value));
     }
     return new Intl.NumberFormat("es-ES", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
@@ -597,8 +606,8 @@ export default function Trading() {
         const total = Number(n.total);
         return {
           date: format(new Date(n.report_date), "dd/MM"),
-          balance: displayCurrency === "EUR" ? convertToEur(total) : total,
-          pnl: displayCurrency === "EUR" ? convertToEur(total - firstTotal) : (total - firstTotal),
+          balance: navCurrency === "USD" ? convertToUsd(total) : total,
+          pnl: navCurrency === "USD" ? convertToUsd(total - firstTotal) : (total - firstTotal),
           dailyPnL: 0,
         };
       });
@@ -643,11 +652,11 @@ export default function Trading() {
 
     return Object.entries(dailyData).map(([date, data]) => ({
       date,
-      balance: displayCurrency === "EUR" ? convertToEur(data.balance) : data.balance,
-      pnl: displayCurrency === "EUR" ? convertToEur(data.pnl) : data.pnl,
-      dailyPnL: displayCurrency === "EUR" ? convertToEur(data.dailyPnL) : data.dailyPnL,
+      balance: navCurrency === "USD" ? convertToUsd(data.balance) : data.balance,
+      pnl: navCurrency === "USD" ? convertToUsd(data.pnl) : data.pnl,
+      dailyPnL: navCurrency === "USD" ? convertToUsd(data.dailyPnL) : data.dailyPnL,
     }));
-  }, [filteredByExclusions, trades, displayCurrency, convertToEur, navHistory, selectedPeriod]);
+  }, [filteredByExclusions, trades, navCurrency, convertToEur, convertToUsd, navHistory, selectedPeriod]);
 
   // Compute client-side running balance: startingCash + cumulative netCash (or pnl-commission if netCash=0)
   const computedBalanceMap = useMemo(() => {
@@ -833,10 +842,10 @@ export default function Trading() {
 
           <div className="h-6 w-px bg-border" />
 
-          {/* Currency Toggle */}
+          {/* NAV Currency Toggle */}
           <CurrencyToggle
-            currency={displayCurrency}
-            onCurrencyChange={setDisplayCurrency}
+            currency={navCurrency}
+            onCurrencyChange={setNavCurrency}
             exchangeRate={exchangeRate}
           />
 
@@ -864,7 +873,7 @@ export default function Trading() {
 
         {/* NAV Summary Cards */}
         <NavSummaryCards
-          formatCurrency={formatCurrency}
+          formatCurrency={formatNavCurrency}
           refreshTrigger={positionsRefreshTrigger}
         />
 
@@ -874,7 +883,7 @@ export default function Trading() {
           <Card className="sm:col-span-1">
             <CardContent className="pt-4 sm:pt-6">
               <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo P&L Acumulado</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatCurrency(kpis.currentBalance)}</p>
+              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatNavCurrency(kpis.currentBalance)}</p>
               <p className={`text-sm mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
                 {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% sobre cash inicial
               </p>
@@ -899,7 +908,7 @@ export default function Trading() {
                   <span className="text-xs text-muted-foreground">P&L Período</span>
                 </div>
                 <p className={`text-lg font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  {formatCurrency(kpis.totalPnL)}
+                  {formatTradesCurrency(kpis.totalPnL)}
                 </p>
                 <p className={`text-xs ${kpis.periodReturnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
                   ({kpis.periodReturnPercent >= 0 ? "+" : ""}{kpis.periodReturnPercent.toFixed(2)}%)
@@ -934,7 +943,7 @@ export default function Trading() {
                   <span className="text-xs text-muted-foreground">Max DD</span>
                 </div>
                 <p className="text-lg font-bold text-red-500">
-                  {formatCurrency(kpis.maxDrawdown)}
+                  {formatTradesCurrency(kpis.maxDrawdown)}
                 </p>
               </CardContent>
             </Card>
@@ -956,9 +965,9 @@ export default function Trading() {
                   <span className="text-xs text-muted-foreground">Avg W/L</span>
                 </div>
                 <p className="text-xs font-medium">
-                  <span className="text-green-500">{formatCurrency(kpis.avgWin)}</span>
+                  <span className="text-green-500">{formatTradesCurrency(kpis.avgWin)}</span>
                   <span className="text-muted-foreground"> / </span>
-                  <span className="text-red-500">{formatCurrency(kpis.avgLoss)}</span>
+                  <span className="text-red-500">{formatTradesCurrency(kpis.avgLoss)}</span>
                 </p>
               </CardContent>
             </Card>
@@ -982,7 +991,7 @@ export default function Trading() {
                   />
                   <YAxis 
                     tick={{ fontSize: 12 }}
-                    tickFormatter={(val) => displayCurrency === "EUR" ? `€${(val / 1000).toFixed(0)}k` : `$${(val / 1000).toFixed(0)}k`}
+                    tickFormatter={(val) => navCurrency === "USD" ? `$${(val / 1000).toFixed(0)}k` : `€${(val / 1000).toFixed(0)}k`}
                     className="text-muted-foreground"
                     domain={['auto', 'auto']}
                   />
@@ -992,10 +1001,10 @@ export default function Trading() {
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
                     }}
-                    formatter={(value: number) => [formatCurrency(displayCurrency === "EUR" ? value / exchangeRate : value), "Saldo"]}
+                    formatter={(value: number) => [formatNavCurrency(value), "Saldo"]}
                   />
                   <ReferenceLine 
-                    y={displayCurrency === "EUR" ? convertToEur(getInitialBalance()) : getInitialBalance()} 
+                    y={navCurrency === "USD" ? convertToUsd(getInitialBalance()) : getInitialBalance()}
                     stroke="hsl(var(--muted-foreground))" 
                     strokeDasharray="3 3" 
                   />
@@ -1035,7 +1044,7 @@ export default function Trading() {
                     </span>
                   </div>
                   <p className={`text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
-                    {formatCurrency(symbol.pnl)}
+                    {formatTradesCurrency(symbol.pnl)}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Win Rate: {symbol.winRate.toFixed(1)}%
@@ -1048,8 +1057,8 @@ export default function Trading() {
 
         {/* Open Positions */}
         <OpenPositionsTable
-          formatCurrency={formatCurrency}
-          displayCurrency={displayCurrency}
+          formatCurrency={formatNavCurrency}
+          displayCurrency={navCurrency}
           refreshTrigger={positionsRefreshTrigger}
         />
 
@@ -1059,6 +1068,11 @@ export default function Trading() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <CardTitle className="text-base sm:text-lg">Trades Ejecutados</CardTitle>
               <div className="flex items-center gap-2 sm:gap-3">
+                <CurrencyToggle
+                  currency={tradesCurrency}
+                  onCurrencyChange={setTradesCurrency}
+                  exchangeRate={exchangeRate}
+                />
                 <div className="relative w-full sm:w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -1149,22 +1163,22 @@ export default function Trading() {
                         )}
                         {isColumnVisible("price") && (
                           <TableCell className="text-right">
-                            {displayCurrency === "EUR" ? "€" : "$"}{Math.round(trade.price).toLocaleString("es-ES")}
+                            {tradesCurrency === "EUR" ? "€" : "$"}{Math.round(trade.price).toLocaleString("es-ES")}
                           </TableCell>
                         )}
                         {isColumnVisible("realized_pnl") && (
                           <TableCell className={`text-right font-medium ${(trade.realized_pnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
-                            {formatCurrency(trade.realized_pnl || 0)}
+                            {formatTradesCurrency(trade.realized_pnl || 0)}
                           </TableCell>
                         )}
                         {isColumnVisible("commission") && (
                           <TableCell className="text-right text-muted-foreground">
-                            {displayCurrency === "EUR" ? "€" : "$"}{Math.round(trade.commission).toLocaleString("es-ES")}
+                            {tradesCurrency === "EUR" ? "€" : "$"}{Math.round(trade.commission).toLocaleString("es-ES")}
                           </TableCell>
                         )}
                         {isColumnVisible("saldo_actual") && (
                           <TableCell className="text-right">
-                            {formatCurrency(computedBalanceMap[trade.id] || 0)}
+                            {formatTradesCurrency(computedBalanceMap[trade.id] || 0)}
                           </TableCell>
                         )}
                         {isColumnVisible("trade_duration") && (
