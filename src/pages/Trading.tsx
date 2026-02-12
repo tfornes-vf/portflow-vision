@@ -58,29 +58,32 @@ type TimezoneOption = "America/New_York" | "Europe/Madrid" | "Europe/London" | "
 
 const TIMEZONE_LABELS: Record<TimezoneOption, string> = {
   "America/New_York": "Nueva York (ET)",
-  "Europe/Madrid": "España (CET)",
+  "Europe/Madrid": "España (GMT+1)",
   "Europe/London": "Londres (GMT)",
   "UTC": "UTC",
 };
 
-/** Convert a date_time string (assumed NY time) to the target timezone for display */
-function formatInTimezone(dateStr: string, tz: TimezoneOption, fmt: string): string {
-  // The date_time from IBKR is in America/New_York.
-  // We parse it as-is (UTC by parseISO), then adjust.
+// Hours to ADD to NY time to get target timezone
+const TZ_OFFSET_FROM_NY: Record<TimezoneOption, number> = {
+  "America/New_York": 0,
+  "Europe/Madrid": 6,   // NY(EST) = GMT-5, España = GMT+1 → +6h
+  "Europe/London": 5,   // NY(EST) = GMT-5, Londres = GMT → +5h
+  "UTC": 5,             // NY(EST) = GMT-5, UTC = GMT → +5h
+};
+
+/** Convert a date_time string (stored as NY time) to the target timezone for display */
+function formatInTimezone(dateStr: string, tz: TimezoneOption, _fmt: string): string {
+  // The date_time from IBKR XML is New York time, stored naively (no tz info).
+  // parseISO treats it as UTC, but it's actually NY. We apply a manual offset.
   const parsed = parseISO(dateStr);
-  // Use Intl to format in the target timezone
-  const options: Intl.DateTimeFormatOptions = {
-    timeZone: tz,
-    year: "numeric", month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
-  };
-  // For short formats, use custom formatting
-  if (fmt === "dd/MM/yyyy HH:mm") {
-    const parts = new Intl.DateTimeFormat("es-ES", options).formatToParts(parsed);
-    const get = (type: string) => parts.find(p => p.type === type)?.value || "";
-    return `${get("day")}/${get("month")}/${get("year")} ${get("hour")}:${get("minute")}`;
-  }
-  return new Intl.DateTimeFormat("es-ES", options).format(parsed);
+  const offset = TZ_OFFSET_FROM_NY[tz];
+  const adjusted = new Date(parsed.getTime() + offset * 60 * 60 * 1000);
+  const dd = String(adjusted.getUTCDate()).padStart(2, "0");
+  const mm = String(adjusted.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = adjusted.getUTCFullYear();
+  const hh = String(adjusted.getUTCHours()).padStart(2, "0");
+  const min = String(adjusted.getUTCMinutes()).padStart(2, "0");
+  return `${dd}/${mm}/${yyyy} ${hh}:${min}`;
 }
 
 interface RawTrade {
