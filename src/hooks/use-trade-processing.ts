@@ -53,21 +53,28 @@ export function useTradeProcessing(trades: RawTrade[]): ProcessedTrade[] {
     const openPositions: Record<string, OpenPosition[]> = {};
     const tradeDurations: Record<string, number> = {}; // trade id -> duration in seconds
 
+    // Track net position per symbol to determine open/close
+    const netPosition: Record<string, number> = {}; // key -> net qty (positive = long, negative = short)
+
     for (const trade of sortedTrades) {
       const key = `${trade.account_id}:${trade.symbol}`;
-      
-      // Opening trade: realized_pnl = 0 or null
-      const isOpening = trade.realized_pnl === 0 || trade.realized_pnl === null;
-      
-      if (isOpening) {
-        // Add to open positions queue
+      const currentPos = netPosition[key] || 0;
+      const signedQty = trade.side === "BUY" ? Math.abs(trade.quantity) : -Math.abs(trade.quantity);
+      const newPos = currentPos + signedQty;
+
+      // Determine if this trade is opening or closing (or both for partial)
+      const isIncreasingPosition = Math.abs(newPos) > Math.abs(currentPos);
+      const isClosingPosition = Math.abs(newPos) < Math.abs(currentPos) || (currentPos !== 0 && Math.sign(newPos) !== Math.sign(currentPos));
+
+      if (isIncreasingPosition && !isClosingPosition) {
+        // Pure opening trade
         if (!openPositions[key]) {
           openPositions[key] = [];
         }
         openPositions[key].push({ trade, remainingQty: Math.abs(trade.quantity) });
-      } else {
+      } else if (isClosingPosition) {
         // Closing trade: match with opening trades using FIFO
-        let qtyToClose = Math.abs(trade.quantity);
+        let qtyToClose = Math.min(Math.abs(trade.quantity), Math.abs(currentPos));
         const closingTime = parseISO(trade.date_time);
         let earliestOpeningTime: Date | null = null;
 
@@ -76,7 +83,6 @@ export function useTradeProcessing(trades: RawTrade[]): ProcessedTrade[] {
             const oldest = openPositions[key][0];
             const matchedQty = Math.min(qtyToClose, oldest.remainingQty);
             
-            // Track the earliest opening time for this closing trade
             const openingTime = parseISO(oldest.trade.date_time);
             if (!earliestOpeningTime || openingTime < earliestOpeningTime) {
               earliestOpeningTime = openingTime;
@@ -91,30 +97,35 @@ export function useTradeProcessing(trades: RawTrade[]): ProcessedTrade[] {
           }
         }
 
-        // Calculate duration from earliest matched opening to closing
         if (earliestOpeningTime) {
           const durationSeconds = differenceInSeconds(closingTime, earliestOpeningTime);
           tradeDurations[trade.id] = durationSeconds;
         }
+
+        // If trade also opens in opposite direction, add remainder as opening
+        if (Math.sign(newPos) !== 0 && Math.sign(newPos) !== Math.sign(currentPos)) {
+          if (!openPositions[key]) {
+            openPositions[key] = [];
+          }
+          openPositions[key].push({ trade, remainingQty: Math.abs(newPos) });
+        }
       }
+
+      netPosition[key] = newPos;
     }
 
     // Map trades to processed trades with duration and action
     return trades.map((trade): ProcessedTrade => {
-      const isClosing = trade.realized_pnl !== 0 && trade.realized_pnl !== null;
+      const hasDuration = tradeDurations[trade.id] !== undefined;
       
       let action: "L" | "S" | null = null;
       let trade_duration: string | null = null;
 
-      if (isClosing) {
-        // Action: SELL to close = was Long (L), BUY to close = was Short (S)
+      if (hasDuration) {
+        // This is a closing trade
+        // SELL to close = was Long (L), BUY to close = was Short (S)
         action = trade.side === "SELL" ? "L" : "S";
-        
-        // Duration
-        const durationSeconds = tradeDurations[trade.id];
-        if (durationSeconds !== undefined) {
-          trade_duration = formatDuration(durationSeconds);
-        }
+        trade_duration = formatDuration(tradeDurations[trade.id]);
       }
 
       return {
