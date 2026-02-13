@@ -754,13 +754,13 @@ export default function Trading() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
+      <div className="container mx-auto px-2 py-3 sm:p-6 space-y-3 sm:space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">Trading</h1>
+          <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">Trading</h1>
           <div className="flex items-center gap-1.5 sm:gap-3">
             <Select value={selectedAccount} onValueChange={(v) => setSelectedAccount(v as AccountId)}>
-              <SelectTrigger className="w-[100px] sm:w-[180px] text-xs sm:text-sm h-8 sm:h-10">
+              <SelectTrigger className="w-[90px] sm:w-[180px] text-xs sm:text-sm h-8 sm:h-10">
                 <SelectValue placeholder="Cuenta" />
               </SelectTrigger>
               <SelectContent>
@@ -785,15 +785,15 @@ export default function Trading() {
         </div>
 
         {/* Top-Level Filters */}
-        <div className="flex flex-wrap gap-1.5 sm:gap-3 items-center">
+        <div className="space-y-1.5 sm:space-y-0 sm:flex sm:flex-wrap sm:gap-3 sm:items-center">
           {/* Period Filter */}
-          <div className="flex gap-0.5 sm:gap-1 flex-wrap">
+          <div className="flex gap-0.5 flex-wrap">
             {periods.map((period) => (
               <Button
                 key={period.key}
                 variant={selectedPeriod === period.key ? "default" : "outline"}
                 size="sm"
-                className="h-7 sm:h-9 px-2 sm:px-3 text-xs"
+                className="h-7 sm:h-9 px-2 sm:px-3 text-[11px] sm:text-xs"
                 onClick={() => {
                   setSelectedPeriod(period.key);
                   if (period.key !== "CUSTOM") setDateRange(undefined);
@@ -808,9 +808,9 @@ export default function Trading() {
                 <Button
                   variant={selectedPeriod === "CUSTOM" ? "default" : "outline"}
                   size="sm"
-                  className={cn("gap-1 h-7 sm:h-9 px-2 sm:px-3 text-xs", selectedPeriod === "CUSTOM" && "bg-primary")}
+                  className={cn("gap-1 h-7 sm:h-9 px-2 sm:px-3 text-[11px] sm:text-xs", selectedPeriod === "CUSTOM" && "bg-primary")}
                 >
-                  <CalendarIcon className="h-3.5 w-3.5" />
+                  <CalendarIcon className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                   <span className="hidden sm:inline">
                     {dateRange?.from ? (
                       dateRange.to ? (
@@ -839,35 +839,35 @@ export default function Trading() {
             </Popover>
           </div>
 
-          <div className="h-5 w-px bg-border hidden sm:block" />
+          {/* Second row on mobile: toggles & filters */}
+          <div className="flex gap-1.5 items-center flex-wrap">
+            <div className="hidden sm:block h-5 w-px bg-border" />
 
-          {/* NAV Currency Toggle */}
-          <CurrencyToggle
-            currency={navCurrency}
-            onCurrencyChange={setNavCurrency}
-            exchangeRate={exchangeRate}
-          />
+            <CurrencyToggle
+              currency={navCurrency}
+              onCurrencyChange={setNavCurrency}
+              exchangeRate={exchangeRate}
+            />
 
-          {/* Timezone Selector */}
-          <Select value={timezone} onValueChange={(v) => setTimezone(v as TimezoneOption)}>
-            <SelectTrigger className="w-[120px] sm:w-[160px] text-xs h-7 sm:h-9">
-              <Globe className="h-3 w-3 sm:h-3.5 sm:w-3.5 mr-1 text-muted-foreground" />
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {(Object.entries(TIMEZONE_LABELS) as [TimezoneOption, string][]).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Select value={timezone} onValueChange={(v) => setTimezone(v as TimezoneOption)}>
+              <SelectTrigger className="w-[100px] sm:w-[160px] text-[10px] sm:text-xs h-7 sm:h-9">
+                <Globe className="h-3 w-3 mr-1 text-muted-foreground shrink-0" />
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.entries(TIMEZONE_LABELS) as [TimezoneOption, string][]).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
 
-          {/* Exclusion Filter */}
-          <ExclusionFilter
-            exclusions={exclusions}
-            onExclusionsChange={setExclusions}
-            availableSymbols={availableSymbols}
-            preset={selectedAccount !== "ALL" ? ACCOUNT_PRESETS[selectedAccount] : undefined}
-          />
+            <ExclusionFilter
+              exclusions={exclusions}
+              onExclusionsChange={setExclusions}
+              availableSymbols={availableSymbols}
+              preset={selectedAccount !== "ALL" ? ACCOUNT_PRESETS[selectedAccount] : undefined}
+            />
+          </div>
         </div>
 
         {/* NAV Summary Cards */}
@@ -879,18 +879,18 @@ export default function Trading() {
         {/* Main Metrics Row */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {/* Current PnL Balance Card */}
-          <Card className="col-span-2 sm:col-span-1">
-            <CardContent className="p-3 sm:pt-6">
-              <p className="text-[10px] sm:text-sm text-muted-foreground mb-0.5 sm:mb-1">Saldo P&L Acumulado</p>
-              <p className="text-lg sm:text-3xl font-bold text-foreground">{formatNavCurrency(kpis.currentBalance)}</p>
-              <p className={`text-xs mt-0.5 sm:mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+          <Card>
+            <CardContent className="p-2.5 sm:pt-6">
+              <p className="text-[10px] sm:text-sm text-muted-foreground mb-0.5">Saldo P&L Acumulado</p>
+              <p className="text-base sm:text-3xl font-bold text-foreground">{formatNavCurrency(kpis.currentBalance)}</p>
+              <p className={`text-[10px] sm:text-xs mt-0.5 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
                 {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}%
               </p>
             </CardContent>
           </Card>
 
           {/* Daily Return Gauge */}
-          <div className="col-span-2 sm:col-span-1">
+          <div>
             <DailyReturnGauge 
               dailyReturn={dailyMetrics.dailyReturn}
               avgDailyReturn={dailyMetrics.avgDailyReturn}
@@ -901,69 +901,69 @@ export default function Trading() {
           {/* KPI Cards */}
           <div className="col-span-2 grid grid-cols-3 gap-1.5 sm:gap-3">
             <Card>
-              <CardContent className="p-2.5 sm:pt-4">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground">P&L</span>
+              <CardContent className="p-2 sm:pt-4">
+                <div className="flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate">P&L</span>
                 </div>
-                <p className={`text-sm sm:text-lg font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
+                <p className={`text-xs sm:text-lg font-bold truncate ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
                   {formatTradesCurrency(kpis.totalPnL)}
                 </p>
-                <p className={`text-[10px] sm:text-xs ${kpis.periodReturnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+                <p className={`text-[9px] sm:text-xs ${kpis.periodReturnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
                   {kpis.periodReturnPercent >= 0 ? "+" : ""}{kpis.periodReturnPercent.toFixed(2)}%
                 </p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-2.5 sm:pt-4">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground">Trades</span>
+              <CardContent className="p-2 sm:pt-4">
+                <div className="flex items-center gap-1">
+                  <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate">Trades</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold">{kpis.totalTrades}</p>
+                <p className="text-xs sm:text-lg font-bold">{kpis.totalTrades}</p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-2.5 sm:pt-4">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <Target className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground">Win Rate</span>
+              <CardContent className="p-2 sm:pt-4">
+                <div className="flex items-center gap-1">
+                  <Target className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate">Win Rate</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold">{kpis.winRate.toFixed(1)}%</p>
+                <p className="text-xs sm:text-lg font-bold">{kpis.winRate.toFixed(1)}%</p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-2.5 sm:pt-4">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <TrendingDown className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground">Max DD</span>
+              <CardContent className="p-2 sm:pt-4">
+                <div className="flex items-center gap-1">
+                  <TrendingDown className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate">Max DD</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold text-red-500">
+                <p className="text-xs sm:text-lg font-bold text-destructive truncate">
                   {formatTradesCurrency(kpis.maxDrawdown)}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-2.5 sm:pt-4">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground">Sharpe</span>
+              <CardContent className="p-2 sm:pt-4">
+                <div className="flex items-center gap-1">
+                  <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate">Sharpe</span>
                 </div>
-                <p className="text-sm sm:text-lg font-bold">{kpis.sharpeRatio.toFixed(2)}</p>
+                <p className="text-xs sm:text-lg font-bold">{kpis.sharpeRatio.toFixed(2)}</p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="p-2.5 sm:pt-4">
-                <div className="flex items-center gap-1 sm:gap-2">
-                  <Percent className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground">Avg W/L</span>
+              <CardContent className="p-2 sm:pt-4">
+                <div className="flex items-center gap-1">
+                  <Percent className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+                  <span className="text-[9px] sm:text-xs text-muted-foreground truncate">Avg W/L</span>
                 </div>
-                <p className="text-[10px] sm:text-xs font-medium">
+                <p className="text-[9px] sm:text-xs font-medium truncate">
                   <span className="text-green-500">{formatTradesCurrency(kpis.avgWin)}</span>
                   <span className="text-muted-foreground"> / </span>
                   <span className="text-red-500">{formatTradesCurrency(kpis.avgLoss)}</span>
@@ -975,30 +975,33 @@ export default function Trading() {
 
         {/* Performance Chart */}
         <Card>
-          <CardHeader>
-            <CardTitle>Rendimiento Acumulado (Saldo)</CardTitle>
+          <CardHeader className="p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-lg">Rendimiento Acumulado (Saldo)</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-2 sm:p-6 pt-0">
             {chartData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={chartData}>
+              <ResponsiveContainer width="100%" height={220} className="sm:!h-[300px]">
+                <LineChart data={chartData} margin={{ left: -10, right: 5, top: 5, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
                   <XAxis 
                     dataKey="date" 
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 10 }}
                     className="text-muted-foreground"
+                    interval="preserveStartEnd"
                   />
                   <YAxis 
-                    tick={{ fontSize: 12 }}
+                    tick={{ fontSize: 10 }}
                     tickFormatter={(val) => navCurrency === "USD" ? `$${(val / 1000).toFixed(0)}k` : `€${(val / 1000).toFixed(0)}k`}
                     className="text-muted-foreground"
                     domain={['auto', 'auto']}
+                    width={45}
                   />
                   <Tooltip
                     contentStyle={{
                       backgroundColor: "hsl(var(--card))",
                       border: "1px solid hsl(var(--border))",
                       borderRadius: "8px",
+                      fontSize: "12px",
                     }}
                     formatter={(value: number) => [formatNavCurrency(value), "Saldo"]}
                   />
@@ -1017,7 +1020,7 @@ export default function Trading() {
                 </LineChart>
               </ResponsiveContainer>
             ) : (
-              <div className="h-[300px] flex items-center justify-center text-muted-foreground">
+              <div className="h-[220px] sm:h-[300px] flex items-center justify-center text-muted-foreground text-sm">
                 No hay datos para mostrar
               </div>
             )}
@@ -1026,26 +1029,26 @@ export default function Trading() {
 
         {/* Symbol Performance */}
         <Card>
-          <CardHeader>
-            <CardTitle>Rendimiento por Símbolo</CardTitle>
+          <CardHeader className="p-3 sm:p-6">
+            <CardTitle className="text-sm sm:text-lg">Rendimiento por Símbolo</CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-4">
+          <CardContent className="p-2 sm:p-6 pt-0">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-1.5 sm:gap-4">
               {symbolPerformance.map((symbol) => (
                 <div
                   key={symbol.name}
-                  className="p-2.5 sm:p-4 rounded-lg border bg-card"
+                  className="p-2 sm:p-4 rounded-lg border bg-card"
                 >
-                  <div className="flex items-center justify-between mb-1 sm:mb-2">
-                    <Badge variant="outline" className="font-mono text-[10px] sm:text-xs">{symbol.name}</Badge>
-                    <span className="text-[10px] sm:text-xs text-muted-foreground">
+                  <div className="flex items-center justify-between mb-0.5 sm:mb-2">
+                    <Badge variant="outline" className="font-mono text-[9px] sm:text-xs px-1.5 sm:px-2">{symbol.name}</Badge>
+                    <span className="text-[9px] sm:text-xs text-muted-foreground">
                       {symbol.trades}
                     </span>
                   </div>
-                  <p className={`text-sm sm:text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  <p className={`text-xs sm:text-lg font-bold truncate ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {formatTradesCurrency(symbol.pnl)}
                   </p>
-                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                  <p className="text-[9px] sm:text-xs text-muted-foreground">
                     WR: {symbol.winRate.toFixed(1)}%
                   </p>
                 </div>
@@ -1063,33 +1066,33 @@ export default function Trading() {
 
         {/* Trades Table */}
         <Card>
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <CardTitle className="text-base sm:text-lg">Trades Ejecutados</CardTitle>
-              <div className="flex items-center gap-2 sm:gap-3">
+          <CardHeader className="p-3 sm:p-6">
+            <div className="space-y-2 sm:space-y-0 sm:flex sm:items-center sm:justify-between sm:gap-3">
+              <CardTitle className="text-sm sm:text-lg">Trades Ejecutados</CardTitle>
+              <div className="flex items-center gap-1.5 sm:gap-3">
                 <CurrencyToggle
                   currency={tradesCurrency}
                   onCurrencyChange={setTradesCurrency}
                   exchangeRate={exchangeRate}
                 />
-                <div className="relative w-full sm:w-64">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <div className="relative flex-1 sm:w-64">
+                  <Search className="absolute left-2 sm:left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Buscar por símbolo, ID..."
+                    placeholder="Buscar..."
                     value={searchTerm}
                     onChange={(e) => {
                       setSearchTerm(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="pl-9"
+                    className="pl-7 sm:pl-9 h-8 sm:h-10 text-xs sm:text-sm"
                   />
                 </div>
                 <ColumnSelector columns={columns} onColumnChange={handleColumnChange} />
               </div>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="rounded-md border overflow-x-auto">
+          <CardContent className="p-2 sm:p-6 pt-0">
+            <div className="rounded-md border overflow-x-auto -mx-0.5">
               <Table>
                 <TableHeader>
                   <TableRow>

@@ -42,34 +42,34 @@ export function NavSummaryCards({ formatCurrency, refreshTrigger }: NavSummaryCa
   if (cash === 0 && stock === 0 && total === 0) return null;
 
   return (
-    <div className="grid grid-cols-3 gap-2 sm:gap-4">
+    <div className="grid grid-cols-3 gap-1.5 sm:gap-4">
       <Card className="border-primary/30">
-        <CardContent className="p-3 sm:pt-5">
-          <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
-            <Landmark className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary" />
-            <span className="text-[10px] sm:text-sm text-muted-foreground">NAV</span>
+        <CardContent className="p-2 sm:p-4 sm:pt-5">
+          <div className="flex items-center gap-1 mb-0.5 sm:mb-1">
+            <Landmark className="h-3 w-3 sm:h-4 sm:w-4 text-primary shrink-0" />
+            <span className="text-[9px] sm:text-sm text-muted-foreground">NAV</span>
           </div>
-          <p className="text-base sm:text-2xl font-bold text-foreground">{formatCurrency(total)}</p>
+          <p className="text-sm sm:text-2xl font-bold text-foreground truncate">{formatCurrency(total)}</p>
         </CardContent>
       </Card>
 
       <Card>
-        <CardContent className="p-3 sm:pt-5">
-          <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
-            <Wallet className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
-            <span className="text-[10px] sm:text-sm text-muted-foreground">Efectivo</span>
+        <CardContent className="p-2 sm:p-4 sm:pt-5">
+          <div className="flex items-center gap-1 mb-0.5 sm:mb-1">
+            <Wallet className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+            <span className="text-[9px] sm:text-sm text-muted-foreground">Efectivo</span>
           </div>
-          <p className="text-base sm:text-2xl font-bold text-foreground">{formatCurrency(cash)}</p>
+          <p className="text-sm sm:text-2xl font-bold text-foreground truncate">{formatCurrency(cash)}</p>
         </CardContent>
       </Card>
 
       <Card>
-        <CardContent className="p-3 sm:pt-5">
-          <div className="flex items-center gap-1.5 sm:gap-2 mb-1">
-            <BarChart3 className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
-            <span className="text-[10px] sm:text-sm text-muted-foreground">Activos</span>
+        <CardContent className="p-2 sm:p-4 sm:pt-5">
+          <div className="flex items-center gap-1 mb-0.5 sm:mb-1">
+            <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground shrink-0" />
+            <span className="text-[9px] sm:text-sm text-muted-foreground">Activos</span>
           </div>
-          <p className="text-base sm:text-2xl font-bold text-foreground">{formatCurrency(stock)}</p>
+          <p className="text-sm sm:text-2xl font-bold text-foreground truncate">{formatCurrency(stock)}</p>
         </CardContent>
       </Card>
     </div>
