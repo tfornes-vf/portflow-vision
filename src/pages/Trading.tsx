@@ -756,21 +756,17 @@ export default function Trading() {
     <AppLayout>
       <div className="container mx-auto p-3 sm:p-6 space-y-4 sm:space-y-6">
         {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-foreground">Trading</h1>
-            <p className="text-sm text-muted-foreground mt-1">Análisis de rendimiento de trading IBKR</p>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* Account Selector */}
+        <div className="flex items-center justify-between gap-2">
+          <h1 className="text-xl sm:text-3xl font-bold tracking-tight text-foreground">Trading</h1>
+          <div className="flex items-center gap-1.5 sm:gap-3">
             <Select value={selectedAccount} onValueChange={(v) => setSelectedAccount(v as AccountId)}>
-              <SelectTrigger className="w-[140px] sm:w-[180px] text-xs sm:text-sm">
-                <SelectValue placeholder="Selecciona cuenta" />
+              <SelectTrigger className="w-[100px] sm:w-[180px] text-xs sm:text-sm h-8 sm:h-10">
+                <SelectValue placeholder="Cuenta" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="U22563190">Principal (U22563190)</SelectItem>
+                <SelectItem value="U22563190">Principal</SelectItem>
                 <SelectItem value="TSC">TSC</SelectItem>
-                <SelectItem value="ALL">Todas las cuentas</SelectItem>
+                <SelectItem value="ALL">Todas</SelectItem>
               </SelectContent>
             </Select>
             
@@ -779,24 +775,25 @@ export default function Trading() {
               disabled={syncing || cooldown > 0}
               variant="outline"
               size="sm"
-              className="text-xs sm:text-sm"
+              className="text-xs h-8 sm:h-10 px-2 sm:px-3"
             >
-              <RefreshCw className={`h-4 w-4 mr-1 sm:mr-2 ${syncing ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">{syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh Trades"}</span>
-              <span className="sm:hidden">{syncing ? "..." : cooldown > 0 ? `${cooldown}s` : "Sync"}</span>
+              <RefreshCw className={`h-3.5 w-3.5 sm:h-4 sm:w-4 ${syncing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline ml-2">{syncing ? "Actualizando..." : cooldown > 0 ? `Espera ${cooldown}s` : "Refresh"}</span>
+              <span className="sm:hidden ml-1">{syncing ? "..." : cooldown > 0 ? `${cooldown}s` : ""}</span>
             </Button>
           </div>
         </div>
 
         {/* Top-Level Filters */}
-        <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+        <div className="flex flex-wrap gap-1.5 sm:gap-3 items-center">
           {/* Period Filter */}
-          <div className="flex gap-1 flex-wrap">
+          <div className="flex gap-0.5 sm:gap-1 flex-wrap">
             {periods.map((period) => (
               <Button
                 key={period.key}
                 variant={selectedPeriod === period.key ? "default" : "outline"}
                 size="sm"
+                className="h-7 sm:h-9 px-2 sm:px-3 text-xs"
                 onClick={() => {
                   setSelectedPeriod(period.key);
                   if (period.key !== "CUSTOM") setDateRange(undefined);
@@ -811,18 +808,20 @@ export default function Trading() {
                 <Button
                   variant={selectedPeriod === "CUSTOM" ? "default" : "outline"}
                   size="sm"
-                  className={cn("gap-2", selectedPeriod === "CUSTOM" && "bg-primary")}
+                  className={cn("gap-1 h-7 sm:h-9 px-2 sm:px-3 text-xs", selectedPeriod === "CUSTOM" && "bg-primary")}
                 >
-                  <CalendarIcon className="h-4 w-4" />
-                  {dateRange?.from ? (
-                    dateRange.to ? (
-                      `${format(dateRange.from, "dd/MM")} - ${format(dateRange.to, "dd/MM")}`
+                  <CalendarIcon className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">
+                    {dateRange?.from ? (
+                      dateRange.to ? (
+                        `${format(dateRange.from, "dd/MM")} - ${format(dateRange.to, "dd/MM")}`
+                      ) : (
+                        format(dateRange.from, "dd/MM/yy")
+                      )
                     ) : (
-                      format(dateRange.from, "dd/MM/yy")
-                    )
-                  ) : (
-                    "Personalizar"
-                  )}
+                      "Custom"
+                    )}
+                  </span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0" align="start">
@@ -840,7 +839,7 @@ export default function Trading() {
             </Popover>
           </div>
 
-          <div className="h-6 w-px bg-border" />
+          <div className="h-5 w-px bg-border hidden sm:block" />
 
           {/* NAV Currency Toggle */}
           <CurrencyToggle
@@ -851,8 +850,8 @@ export default function Trading() {
 
           {/* Timezone Selector */}
           <Select value={timezone} onValueChange={(v) => setTimezone(v as TimezoneOption)}>
-            <SelectTrigger className="w-[160px] text-xs sm:text-sm">
-              <Globe className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+            <SelectTrigger className="w-[120px] sm:w-[160px] text-xs h-7 sm:h-9">
+              <Globe className="h-3 w-3 sm:h-3.5 sm:w-3.5 mr-1 text-muted-foreground" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -878,20 +877,20 @@ export default function Trading() {
         />
 
         {/* Main Metrics Row */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
           {/* Current PnL Balance Card */}
-          <Card className="sm:col-span-1">
-            <CardContent className="pt-4 sm:pt-6">
-              <p className="text-xs sm:text-sm text-muted-foreground mb-1">Saldo P&L Acumulado</p>
-              <p className="text-2xl sm:text-3xl font-bold text-foreground">{formatNavCurrency(kpis.currentBalance)}</p>
-              <p className={`text-sm mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}% sobre cash inicial
+          <Card className="col-span-2 sm:col-span-1">
+            <CardContent className="p-3 sm:pt-6">
+              <p className="text-[10px] sm:text-sm text-muted-foreground mb-0.5 sm:mb-1">Saldo P&L Acumulado</p>
+              <p className="text-lg sm:text-3xl font-bold text-foreground">{formatNavCurrency(kpis.currentBalance)}</p>
+              <p className={`text-xs mt-0.5 sm:mt-1 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+                {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}%
               </p>
             </CardContent>
           </Card>
 
           {/* Daily Return Gauge */}
-          <div className="lg:col-span-1">
+          <div className="col-span-2 sm:col-span-1">
             <DailyReturnGauge 
               dailyReturn={dailyMetrics.dailyReturn}
               avgDailyReturn={dailyMetrics.avgDailyReturn}
@@ -900,71 +899,71 @@ export default function Trading() {
           </div>
 
           {/* KPI Cards */}
-          <div className="sm:col-span-2 lg:col-span-2 grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
+          <div className="col-span-2 grid grid-cols-3 gap-1.5 sm:gap-3">
             <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">P&L Período</span>
+              <CardContent className="p-2.5 sm:pt-4">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <TrendingUp className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">P&L</span>
                 </div>
-                <p className={`text-lg font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
+                <p className={`text-sm sm:text-lg font-bold ${kpis.totalPnL >= 0 ? "text-green-500" : "text-red-500"}`}>
                   {formatTradesCurrency(kpis.totalPnL)}
                 </p>
-                <p className={`text-xs ${kpis.periodReturnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
-                  ({kpis.periodReturnPercent >= 0 ? "+" : ""}{kpis.periodReturnPercent.toFixed(2)}%)
+                <p className={`text-[10px] sm:text-xs ${kpis.periodReturnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  {kpis.periodReturnPercent >= 0 ? "+" : ""}{kpis.periodReturnPercent.toFixed(2)}%
                 </p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <Activity className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Trades</span>
+              <CardContent className="p-2.5 sm:pt-4">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <Activity className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">Trades</span>
                 </div>
-                <p className="text-lg font-bold">{kpis.totalTrades}</p>
+                <p className="text-sm sm:text-lg font-bold">{kpis.totalTrades}</p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <Target className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Win Rate</span>
+              <CardContent className="p-2.5 sm:pt-4">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <Target className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">Win Rate</span>
                 </div>
-                <p className="text-lg font-bold">{kpis.winRate.toFixed(1)}%</p>
+                <p className="text-sm sm:text-lg font-bold">{kpis.winRate.toFixed(1)}%</p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <TrendingDown className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Max DD</span>
+              <CardContent className="p-2.5 sm:pt-4">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <TrendingDown className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">Max DD</span>
                 </div>
-                <p className="text-lg font-bold text-red-500">
+                <p className="text-sm sm:text-lg font-bold text-red-500">
                   {formatTradesCurrency(kpis.maxDrawdown)}
                 </p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Sharpe</span>
+              <CardContent className="p-2.5 sm:pt-4">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <BarChart3 className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">Sharpe</span>
                 </div>
-                <p className="text-lg font-bold">{kpis.sharpeRatio.toFixed(2)}</p>
+                <p className="text-sm sm:text-lg font-bold">{kpis.sharpeRatio.toFixed(2)}</p>
               </CardContent>
             </Card>
 
             <Card>
-              <CardContent className="pt-4">
-                <div className="flex items-center gap-2">
-                  <Percent className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-xs text-muted-foreground">Avg W/L</span>
+              <CardContent className="p-2.5 sm:pt-4">
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <Percent className="h-3 w-3 sm:h-4 sm:w-4 text-muted-foreground" />
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">Avg W/L</span>
                 </div>
-                <p className="text-xs font-medium">
+                <p className="text-[10px] sm:text-xs font-medium">
                   <span className="text-green-500">{formatTradesCurrency(kpis.avgWin)}</span>
                   <span className="text-muted-foreground"> / </span>
                   <span className="text-red-500">{formatTradesCurrency(kpis.avgLoss)}</span>
@@ -1031,23 +1030,23 @@ export default function Trading() {
             <CardTitle>Rendimiento por Símbolo</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 sm:gap-4">
               {symbolPerformance.map((symbol) => (
                 <div
                   key={symbol.name}
-                  className="p-4 rounded-lg border bg-card"
+                  className="p-2.5 sm:p-4 rounded-lg border bg-card"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <Badge variant="outline" className="font-mono">{symbol.name}</Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {symbol.trades} trades
+                  <div className="flex items-center justify-between mb-1 sm:mb-2">
+                    <Badge variant="outline" className="font-mono text-[10px] sm:text-xs">{symbol.name}</Badge>
+                    <span className="text-[10px] sm:text-xs text-muted-foreground">
+                      {symbol.trades}
                     </span>
                   </div>
-                  <p className={`text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
+                  <p className={`text-sm sm:text-lg font-bold ${symbol.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>
                     {formatTradesCurrency(symbol.pnl)}
                   </p>
-                  <p className="text-xs text-muted-foreground">
-                    Win Rate: {symbol.winRate.toFixed(1)}%
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
+                    WR: {symbol.winRate.toFixed(1)}%
                   </p>
                 </div>
               ))}
