@@ -89,8 +89,8 @@ export function OpenPositionsTable({ formatCurrency, displayCurrency, refreshTri
         </div>
       </CardHeader>
       <CardContent className="p-2 sm:p-6 pt-0">
-        <div className="rounded-md border overflow-x-auto -mx-0.5">
-          <Table>
+        <div className="rounded-md border overflow-x-auto max-w-full">
+          <Table className="min-w-[400px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="text-[10px] sm:text-sm">Símbolo</TableHead>

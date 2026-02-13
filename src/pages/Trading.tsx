@@ -754,7 +754,7 @@ export default function Trading() {
 
   return (
     <AppLayout>
-      <div className="container mx-auto px-2 py-3 sm:p-6 space-y-3 sm:space-y-6">
+      <div className="w-full max-w-full overflow-x-hidden px-2 py-3 sm:container sm:mx-auto sm:p-6 space-y-3 sm:space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-lg sm:text-3xl font-bold tracking-tight text-foreground">Trading</h1>
@@ -877,29 +877,16 @@ export default function Trading() {
         />
 
         {/* Main Metrics Row */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
-          {/* Current PnL Balance Card */}
-          <Card>
-            <CardContent className="p-2.5 sm:pt-6">
-              <p className="text-[10px] sm:text-sm text-muted-foreground mb-0.5">Saldo P&L Acumulado</p>
-              <p className="text-base sm:text-3xl font-bold text-foreground">{formatNavCurrency(kpis.currentBalance)}</p>
-              <p className={`text-[10px] sm:text-xs mt-0.5 ${kpis.returnPercent >= 0 ? "text-green-500" : "text-red-500"}`}>
-                {kpis.returnPercent >= 0 ? "+" : ""}{kpis.returnPercent.toFixed(2)}%
-              </p>
-            </CardContent>
-          </Card>
-
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4">
           {/* Daily Return Gauge */}
-          <div>
-            <DailyReturnGauge 
-              dailyReturn={dailyMetrics.dailyReturn}
-              avgDailyReturn={dailyMetrics.avgDailyReturn}
-              lastCompleteDayReturn={dailyMetrics.lastCompleteDayReturn}
-            />
-          </div>
+          <DailyReturnGauge 
+            dailyReturn={dailyMetrics.dailyReturn}
+            avgDailyReturn={dailyMetrics.avgDailyReturn}
+            lastCompleteDayReturn={dailyMetrics.lastCompleteDayReturn}
+          />
 
           {/* KPI Cards */}
-          <div className="col-span-2 grid grid-cols-3 gap-1.5 sm:gap-3">
+          <div className="sm:col-span-1 lg:col-span-2 grid grid-cols-3 gap-1.5 sm:gap-3">
             <Card>
               <CardContent className="p-2 sm:pt-4">
                 <div className="flex items-center gap-1">
@@ -1092,8 +1079,8 @@ export default function Trading() {
             </div>
           </CardHeader>
           <CardContent className="p-2 sm:p-6 pt-0">
-            <div className="rounded-md border overflow-x-auto -mx-0.5">
-              <Table>
+            <div className="rounded-md border overflow-x-auto max-w-full">
+              <Table className="min-w-[500px]">
                 <TableHeader>
                   <TableRow>
                     {isColumnVisible("date_time") && <TableHead>Fecha</TableHead>}
