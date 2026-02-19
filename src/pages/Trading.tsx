@@ -178,7 +178,7 @@ const DEFAULT_COLUMNS: ColumnConfig[] = [
   { key: "price", label: "Precio", visible: true },
   { key: "realized_pnl", label: "P&L", visible: true },
   { key: "commission", label: "Comisión", visible: false, defaultHidden: true },
-  { key: "saldo_actual", label: "Saldo", visible: true },
+  { key: "saldo_actual", label: "P&L Acum.", visible: true },
   { key: "trade_duration", label: "Duración", visible: true },
   { key: "id", label: "ID DB", visible: false, defaultHidden: true },
   { key: "ib_trade_id", label: "ID IBKR", visible: false, defaultHidden: true },
@@ -658,7 +658,7 @@ export default function Trading() {
     }));
   }, [filteredByExclusions, trades, navCurrency, convertToEur, convertToUsd, navHistory, selectedPeriod]);
 
-  // Compute client-side running balance: startingCash + cumulative netCash (or pnl-commission if netCash=0)
+  // RULE 3: Compute P&L Acumulado — cumulative (realized_pnl) starting from 0
   const computedBalanceMap = useMemo(() => {
     const map: Record<string, number> = {};
     const sorted = [...trades].sort((a, b) => {
@@ -666,18 +666,13 @@ export default function Trading() {
       if (dateCmp !== 0) return dateCmp;
       return (parseInt(a.ib_trade_id) || 0) - (parseInt(b.ib_trade_id) || 0);
     });
-    let bal = getInitialBalance();
+    let cumPnl = 0;
     for (const t of sorted) {
-      const netCash = (t as any).net_cash;
-      if (netCash && netCash !== 0) {
-        bal += Number(netCash);
-      } else {
-        bal += (t.realized_pnl || 0) - (t.commission || 0);
-      }
-      map[t.id] = bal;
+      cumPnl += (t.realized_pnl || 0);
+      map[t.id] = cumPnl;
     }
     return map;
-  }, [trades, metadataStartingCash]);
+  }, [trades]);
 
   // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
@@ -1104,7 +1099,7 @@ export default function Trading() {
                     {isColumnVisible("price") && <TableHead className="text-right">Precio</TableHead>}
                     {isColumnVisible("realized_pnl") && <TableHead className="text-right">P&L</TableHead>}
                     {isColumnVisible("commission") && <TableHead className="text-right">Comisión</TableHead>}
-                    {isColumnVisible("saldo_actual") && <TableHead className="text-right">Saldo</TableHead>}
+                    {isColumnVisible("saldo_actual") && <TableHead className="text-right">P&L Acum.</TableHead>}
                     {isColumnVisible("trade_duration") && <TableHead>Duración</TableHead>}
                     {isColumnVisible("id") && <TableHead>ID DB</TableHead>}
                     {isColumnVisible("ib_trade_id") && <TableHead>ID IBKR</TableHead>}
@@ -1166,7 +1161,7 @@ export default function Trading() {
                           </TableCell>
                         )}
                         {isColumnVisible("saldo_actual") && (
-                          <TableCell className="text-right">
+                          <TableCell className={`text-right font-medium ${(computedBalanceMap[trade.id] || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
                             {formatTradesCurrency(computedBalanceMap[trade.id] || 0)}
                           </TableCell>
                         )}

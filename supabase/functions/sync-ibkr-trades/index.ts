@@ -18,15 +18,12 @@ interface IBKRTrade {
   accountId: string;
 }
 
-const INITIAL_BALANCE = 524711.04;
-
 // Parse IBKR date format: "20251104;122328" -> ISO string
 function parseIBKRDate(dateStr: string): string {
   if (!dateStr || dateStr.trim() === '') {
     return new Date().toISOString();
   }
 
-  // Handle IBKR format: "20251104;122328"
   const match = dateStr.match(/^(\d{4})(\d{2})(\d{2});?(\d{2})(\d{2})(\d{2})?/);
   if (match) {
     const [, year, month, day, hour, min, sec = '00'] = match;
@@ -36,7 +33,6 @@ function parseIBKRDate(dateStr: string): string {
     }
   }
 
-  // Try direct parsing
   const date = new Date(dateStr);
   if (!isNaN(date.getTime())) {
     return date.toISOString();
@@ -83,18 +79,15 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       attempts++;
     }
     
-    // Log first 500 chars of XML for debugging
+    console.log(`📄 XML length: ${reportXml.length}`);
     console.log(`📄 XML preview (${reportType}):`, reportXml.substring(0, 500));
     
-    // Check for Trade or TradeConfirm elements
     if (!reportXml.includes("Trade")) {
       console.log(`No trades found in ${reportType}`);
       return [];
     }
     
     const trades: IBKRTrade[] = [];
-    
-    // Match both <Trade> and <TradeConfirm> elements
     const tradeRegex = /<(?:Trade|TradeConfirm)\s+([^>]*?)\s*\/>/gs;
     let match;
     
@@ -113,7 +106,6 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       
       const tradeId = getAttr('tradeID');
       if (tradeId) {
-        // Handle different field names between Trade and TradeConfirm
         const tradePrice = getNumAttr('tradePrice') || getNumAttr('price');
         const commission = getNumAttr('ibCommission') || getNumAttr('commission');
         const pnl = getNumAttr('fifoPnlRealized') || getNumAttr('realizedPL') || 0;
@@ -134,7 +126,8 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     
     console.log(`✅ Downloaded ${trades.length} trades from ${reportType}`);
     if (trades.length > 0) {
-      console.log(`📊 First trade sample:`, JSON.stringify(trades[0]));
+      console.log(`📊 First trade:`, JSON.stringify(trades[0]));
+      console.log(`📊 Last trade:`, JSON.stringify(trades[trades.length - 1]));
     }
     return trades;
     
@@ -172,13 +165,11 @@ serve(async (req) => {
     const allTrades = [...historicalTrades, ...todayTrades];
     const uniqueTrades = new Map<string, IBKRTrade>();
     
-    // Prefer trades with P&L data when deduplicating
     for (const trade of allTrades) {
       const existing = uniqueTrades.get(trade.tradeID);
       if (!existing) {
         uniqueTrades.set(trade.tradeID, trade);
       } else if (trade.fifoPnlRealized !== 0 && existing.fifoPnlRealized === 0) {
-        // Replace with the one that has P&L data
         uniqueTrades.set(trade.tradeID, trade);
       }
     }
@@ -193,33 +184,30 @@ serve(async (req) => {
       );
     }
 
-    // Sort trades by dateTime for cumulative calculation (oldest first)
-    // When trades have the same timestamp, sort by tradeID for deterministic order
+    // Sort trades chronologically
     tradesToProcess.sort((a, b) => {
       const dateA = parseIBKRDate(a.dateTime);
       const dateB = parseIBKRDate(b.dateTime);
       const dateCompare = dateA.localeCompare(dateB);
       if (dateCompare !== 0) return dateCompare;
-      // Secondary sort by tradeID (numerically if possible, otherwise lexically)
       const idA = parseInt(a.tradeID) || 0;
       const idB = parseInt(b.tradeID) || 0;
       return idA - idB;
     });
 
-    // Calculate net amount for each trade
     const calculateNetAmount = (trade: IBKRTrade): number => {
       const amount = Math.abs(trade.quantity) * trade.tradePrice;
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    // INITIAL_BALANCE is the STARTING balance, add P&L as we go
-    console.log(`📊 Using initial balance: ${INITIAL_BALANCE}`);
-
-    // Prepare records with cumulative balance starting from initial
-    let runningBalance = INITIAL_BALANCE;
+    // RULE 3: saldo_actual = P&L Acumulado (cumulative fifoPnlRealized + ibCommission)
+    // Start at 0, NOT from INITIAL_BALANCE
+    let cumulativePnl = 0;
     
     const records = tradesToProcess.map(trade => {
-      runningBalance += trade.fifoPnlRealized || 0;
+      const netPnl = trade.fifoPnlRealized + trade.ibCommission;
+      cumulativePnl += netPnl;
+
       return {
         ib_trade_id: trade.tradeID,
         symbol: trade.symbol,
@@ -233,7 +221,7 @@ serve(async (req) => {
         currency: 'USD',
         realized_pnl: trade.fifoPnlRealized,
         account_id: trade.accountId,
-        saldo_actual: runningBalance,
+        saldo_actual: cumulativePnl, // RULE 3: P&L Acumulado starting from 0
       };
     });
 
@@ -254,7 +242,6 @@ serve(async (req) => {
         success: true, 
         message: `Synced ${data?.length || 0} trades`,
         count: data?.length || 0,
-        lastBalance: runningBalance
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
