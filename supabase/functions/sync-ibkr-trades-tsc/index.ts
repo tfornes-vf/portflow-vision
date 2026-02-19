@@ -391,7 +391,7 @@ serve(async (req) => {
         commission: Math.abs(trade.ibCommission),
         currency: 'USD',
         realized_pnl: trade.fifoPnlRealized + trade.ibCommission,
-        account_id: trade.accountId || 'TSC',
+        account_id: 'TSC',  // Always normalize to 'TSC'
         saldo_actual: cumulativePnl,
         net_cash: trade.netCash || 0,
       };
@@ -414,10 +414,11 @@ serve(async (req) => {
 
     // ── RULE 2: Open Positions — DELETE then INSERT from XML only ──
     let positionsCount = 0;
+    // Delete ALL positions for this account (both 'TSC' and 'U20133521' variants)
     const { error: deleteError } = await supabase
       .from('ib_open_positions_tsc')
       .delete()
-      .eq('account_id', 'TSC');
+      .in('account_id', ['TSC', 'U20133521']);
     
     if (deleteError) {
       console.error('Error clearing old positions:', deleteError);
@@ -434,7 +435,7 @@ serve(async (req) => {
         market_value: pos.marketValue,
         unrealized_pnl: pos.unrealizedPnl,
         currency: pos.currency || 'USD',
-        account_id: pos.accountId || 'TSC',
+        account_id: 'TSC',  // Always normalize to 'TSC' to match DELETE
         position_date: new Date().toISOString(),
       }));
 

@@ -191,7 +191,7 @@ export default function Trading() {
   const [cooldown, setCooldown] = useState(0);
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>("ALL");
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>("YTD");
   const [dateRange, setDateRange] = useState<DateRange | undefined>(undefined);
   const [columns, setColumns] = useState<ColumnConfig[]>(DEFAULT_COLUMNS);
   const [exclusions, setExclusions] = useState<ExclusionRule[]>([]);
@@ -658,10 +658,12 @@ export default function Trading() {
     }));
   }, [filteredByExclusions, trades, navCurrency, convertToEur, convertToUsd, navHistory, selectedPeriod]);
 
-  // RULE 3: Compute P&L Acumulado — cumulative (realized_pnl) starting from 0
+  // RULE 3: Compute P&L Acumulado — cumulative (realized_pnl) within FILTERED trades, starting from 0
   const computedBalanceMap = useMemo(() => {
     const map: Record<string, number> = {};
-    const sorted = [...trades].sort((a, b) => {
+    // Use filtered trades (by period + exclusions), sorted chronologically
+    const filtered = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    const sorted = [...filtered].sort((a, b) => {
       const dateCmp = new Date(a.date_time).getTime() - new Date(b.date_time).getTime();
       if (dateCmp !== 0) return dateCmp;
       return (parseInt(a.ib_trade_id) || 0) - (parseInt(b.ib_trade_id) || 0);
@@ -672,7 +674,7 @@ export default function Trading() {
       map[t.id] = cumPnl;
     }
     return map;
-  }, [trades]);
+  }, [filteredByExclusions]);
 
   // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
