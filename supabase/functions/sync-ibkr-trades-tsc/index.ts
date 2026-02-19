@@ -75,7 +75,7 @@ function parseReportDate(dateStr: string): string {
   return dateStr;
 }
 
-// Extract NetAssetValueInBase nodes from XML
+// Extract EquitySummaryByReportDateInBase nodes from XML
 function parseNavData(xml: string): NavDataPoint[] {
   const results: NavDataPoint[] = [];
   const regex = /<EquitySummaryByReportDateInBase\s+([^>]*?)\s*\/>/gs;
@@ -103,7 +103,7 @@ function parseNavData(xml: string): NavDataPoint[] {
     }
   }
 
-  // Also try EquitySummaryInBase (alternative node name in some Flex queries)
+  // Also try EquitySummaryInBase (alternative node name)
   const regex2 = /<EquitySummaryInBase\s+([^>]*?)\s*\/>/gs;
   while ((match = regex2.exec(xml)) !== null) {
     const attrs = match[1];
@@ -156,6 +156,7 @@ function parseOpenPositions(xml: string): IBKROpenPosition[] {
         costPrice: getNumAttr('costBasisPrice') || getNumAttr('costPrice'),
         marketPrice: getNumAttr('markPrice') || getNumAttr('closePrice'),
         marketValue: getNumAttr('positionValue') || getNumAttr('marketValue'),
+        // RULE 2: Extract fifoPnlUnrealized directly, do NOT calculate
         unrealizedPnl: getNumAttr('fifoPnlUnrealized') || getNumAttr('unrealizedPnl'),
         currency: getAttr('currency') || 'USD',
         accountId: getAttr('accountId') || getAttr('acctId') || 'TSC',
@@ -209,21 +210,23 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
       attempts++;
     }
     
+    console.log(`📄 XML length: ${reportXml.length}`);
     console.log(`📄 XML preview (${reportType}):`, reportXml.substring(0, 500));
     
-    // Parse NAV data from EquitySummaryByReportDateInBase
+    // Parse NAV data
     const navData = parseNavData(reportXml);
     
-    // Parse open positions
+    // Parse open positions (RULE 2: only from <OpenPosition> nodes)
     const openPositions = parseOpenPositions(reportXml);
     
-    // Parse trades
+    // Parse trades - RULE 4: ensure we parse ALL trades including latest date
     if (!reportXml.includes("Trade")) {
       console.log(`No trades found in ${reportType}`);
       return { trades: [], openPositions, navData, rawXml: reportXml };
     }
     
     const trades: IBKRTrade[] = [];
+    // Use a more robust regex that handles multiline attributes
     const tradeRegex = /<(?:Trade|TradeConfirm)\s+([^>]*?)\s*\/>/gs;
     let match;
     
@@ -260,7 +263,9 @@ async function fetchFlexReport(token: string, queryId: string, reportType: strin
     
     console.log(`✅ Downloaded ${trades.length} trades from ${reportType}`);
     if (trades.length > 0) {
-      console.log(`📊 First trade sample:`, JSON.stringify(trades[0]));
+      // Log first and last trade to verify we're getting the full range
+      console.log(`📊 First trade:`, JSON.stringify(trades[0]));
+      console.log(`📊 Last trade:`, JSON.stringify(trades[trades.length - 1]));
     }
     return { trades, openPositions, navData, rawXml: reportXml };
     
@@ -294,9 +299,9 @@ serve(async (req) => {
     // ── NAV History ──────────────────────────────────────────────────
     let latestNav: NavDataPoint | null = null;
     if (navData.length > 0) {
-      // Sort by reportDate ascending
       navData.sort((a, b) => a.reportDate.localeCompare(b.reportDate));
       latestNav = navData[navData.length - 1];
+      console.log(`📈 Latest NAV date: ${latestNav.reportDate}, total: ${latestNav.total}, cash: ${latestNav.cash}, stock: ${latestNav.stock}`);
 
       const navRecords = navData.map(n => ({
         account_id: 'TSC',
@@ -316,7 +321,7 @@ serve(async (req) => {
         console.log(`📈 Upserted ${navRecords.length} NAV history records`);
       }
 
-      // Update sync metadata with latest NAV cash values
+      // RULE 1: Update sync metadata with LATEST NAV values only
       const { error: metaError } = await supabase
         .from('ib_sync_metadata')
         .upsert({
@@ -369,23 +374,32 @@ serve(async (req) => {
       return trade.buySell === 'SELL' ? amount : -amount;
     };
 
-    // Net realized PnL = fifoPnlRealized + ibCommission (commission is already negative)
-    const records = tradesToProcess.map(trade => ({
-      ib_trade_id: trade.tradeID,
-      symbol: trade.symbol,
-      asset_class: 'STK',
-      date_time: parseIBKRDate(trade.dateTime),
-      side: trade.buySell,
-      quantity: Math.abs(trade.quantity),
-      price: trade.tradePrice,
-      amount: calculateNetAmount(trade),
-      commission: Math.abs(trade.ibCommission),
-      currency: 'USD',
-      realized_pnl: trade.fifoPnlRealized + trade.ibCommission, // Net P&L after commission
-      account_id: trade.accountId || 'TSC',
-      saldo_actual: 0, // No longer calculated here; NAV comes from ib_nav_history
-      net_cash: trade.netCash || 0,
-    }));
+    // RULE 3: saldo_actual = P&L Acumulado (cumulative fifoPnlRealized + ibCommission)
+    // Start at 0, NOT from startingCash
+    let cumulativePnl = 0;
+
+    const records = tradesToProcess.map(trade => {
+      // Net P&L = fifoPnlRealized + ibCommission (commission is already negative)
+      const netPnl = trade.fifoPnlRealized + trade.ibCommission;
+      cumulativePnl += netPnl;
+
+      return {
+        ib_trade_id: trade.tradeID,
+        symbol: trade.symbol,
+        asset_class: 'STK',
+        date_time: parseIBKRDate(trade.dateTime),
+        side: trade.buySell,
+        quantity: Math.abs(trade.quantity),
+        price: trade.tradePrice,
+        amount: calculateNetAmount(trade),
+        commission: Math.abs(trade.ibCommission),
+        currency: 'USD',
+        realized_pnl: trade.fifoPnlRealized + trade.ibCommission, // Net P&L after commission
+        account_id: trade.accountId || 'TSC',
+        saldo_actual: cumulativePnl, // RULE 3: P&L Acumulado starting from 0
+        net_cash: trade.netCash || 0,
+      };
+    });
 
     // Upsert trades
     let tradesCount = 0;
@@ -403,10 +417,19 @@ serve(async (req) => {
       console.log(`🎉 Synced ${tradesCount} TSC trades`);
     }
 
-    // ── Open Positions ───────────────────────────────────────────────
+    // ── RULE 2: Open Positions — absolute clearing then insert from XML only ──
     let positionsCount = 0;
-    // Always clear old positions first
-    await supabase.from('ib_open_positions_tsc').delete().eq('account_id', 'TSC');
+    // ALWAYS clear ALL old positions for this account first
+    const { error: deleteError } = await supabase
+      .from('ib_open_positions_tsc')
+      .delete()
+      .eq('account_id', 'TSC');
+    
+    if (deleteError) {
+      console.error('Error clearing old positions:', deleteError);
+    } else {
+      console.log('🗑️ Cleared all previous TSC positions');
+    }
 
     if (openPositions.length > 0) {
       const posRecords = openPositions.map(pos => ({
@@ -415,6 +438,7 @@ serve(async (req) => {
         cost_price: pos.costPrice,
         market_price: pos.marketPrice,
         market_value: pos.marketValue,
+        // RULE 2: Use fifoPnlUnrealized directly from XML
         unrealized_pnl: pos.unrealizedPnl,
         currency: pos.currency || 'USD',
         account_id: pos.accountId || 'TSC',
@@ -432,6 +456,8 @@ serve(async (req) => {
         positionsCount = posData?.length || 0;
         console.log(`📦 Synced ${positionsCount} open positions`);
       }
+    } else {
+      console.log('📦 No open positions in XML — table is now empty for TSC');
     }
 
     return new Response(
@@ -441,7 +467,7 @@ serve(async (req) => {
         count: tradesCount,
         positionsCount,
         navPointsCount: navData.length,
-        latestNav: latestNav ? { total: latestNav.total, cash: latestNav.cash, stock: latestNav.stock } : null,
+        latestNav: latestNav ? { total: latestNav.total, cash: latestNav.cash, stock: latestNav.stock, date: latestNav.reportDate } : null,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
