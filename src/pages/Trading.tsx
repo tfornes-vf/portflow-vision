@@ -678,7 +678,7 @@ export default function Trading() {
 
   // Only show trades with P&L != 0 in the table
   const searchedTrades = useMemo(() => {
-    const tradesWithPnL = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0);
+    const tradesWithPnL = filteredByExclusions.filter(t => t.realized_pnl !== null && t.realized_pnl !== 0 && t.action !== null);
     if (!searchTerm) return tradesWithPnL;
     const term = searchTerm.toLowerCase();
     return tradesWithPnL.filter(t =>
